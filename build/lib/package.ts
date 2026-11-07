@@ -179,6 +179,11 @@ export async function packageApplication(root: string, signal: AbortSignal): Pro
 		}
 		const directory = candidates[0];
 		const layout = packagedLayout(directory, process.platform, product);
+		// Checked before signing, which rewrites the addon's signature on macOS.
+		const stagedSha256 = manifest.files.find(file => file.path === 'app/native/vnilink.node')?.sha256;
+		if (!stagedSha256 || createHash('sha256').update(await readFile(layout.native)).digest('hex') !== stagedSha256) {
+			throw new Error('Packager changed or omitted the staged native addon');
+		}
 		if (isMacintosh) {
 			// Its own executable UUID, so local network privacy decides for VniLink
 			// alone. The fuses changed the Electron framework and the UUID the executable,
@@ -193,14 +198,10 @@ export async function packageApplication(root: string, signal: AbortSignal): Pro
 				await processes.run('codesign', ['--force', '--deep', '--sign', '-', bundle]);
 			}
 		}
-		const nativeSha256 = manifest.files.find(file => file.path === 'app/native/vnilink.node')?.sha256;
-		if (!nativeSha256 || createHash('sha256').update(await readFile(layout.native)).digest('hex') !== nativeSha256) {
-			throw new Error('Packager changed or omitted the staged native addon');
-		}
 		await access(join(layout.resources, 'licenses/native-codecs/native-codecs.txt'));
 		await access(join(layout.resources, 'relink/source/Cargo.lock'));
 		const packager = await readJson(join(root, 'node_modules/electron-builder/package.json'));
-		const packaging = { appId: product.appId, version: manifest.version, electronVersion: electron.version, packagerVersion: packager.version, platform: process.platform, architecture: process.arch, signing, executable: relative(directory, layout.executable).split('\\').join('/'), asarSha256: createHash('sha256').update(await readFile(layout.asar)).digest('hex'), nativeSha256, files: await packageInventory(directory) };
+		const packaging = { appId: product.appId, version: manifest.version, electronVersion: electron.version, packagerVersion: packager.version, platform: process.platform, architecture: process.arch, signing, executable: relative(directory, layout.executable).split('\\').join('/'), asarSha256: createHash('sha256').update(await readFile(layout.asar)).digest('hex'), nativeSha256: createHash('sha256').update(await readFile(layout.native)).digest('hex'), files: await packageInventory(directory) };
 		await writeFile(join(directory, 'packaging-manifest.json'), JSON.stringify(packaging, null, 2) + '\n');
 		await verifyReleaseFiles(stage);
 		signal.throwIfAborted();
