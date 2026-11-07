@@ -5728,7 +5728,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "blake3",
  "bytes",
@@ -5760,7 +5760,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink-app"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "arboard",
  "serde",
@@ -5777,7 +5777,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink-audio"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "cpal",
  "opus",
@@ -5788,7 +5788,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink-hevc"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "cc",
  "shiguredo_cmake",
@@ -5796,7 +5796,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink-linux"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "ashpd",
  "futures-util",
@@ -5817,7 +5817,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink-log"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "serde_json",
  "tracing",
@@ -5826,7 +5826,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink-macos"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "apple-cf",
  "dispatch2",
@@ -5849,7 +5849,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink-media"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.22.1",
  "nix 0.28.0",
@@ -5865,7 +5865,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink-node"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.22.1",
  "chacha20poly1305",
@@ -5891,7 +5891,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink-rename"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
@@ -5899,7 +5899,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink-testkit"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -5922,7 +5922,7 @@ dependencies = [
 
 [[package]]
 name = "vnilink-windows"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "tokio",
  "tracing",
