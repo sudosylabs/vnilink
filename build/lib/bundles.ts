@@ -50,9 +50,12 @@ export function bundleOptions(root: string, { production = false, outputDirector
 		node('src/preload.ts', 'preload.cjs'),
 		// The notice window: its own page, bundle and preload, apart from the workbench's IPC.
 		node('src/noticePreload.ts', 'noticePreload.cjs'),
+		// The connected-computers window, likewise apart.
+		node('src/indicatorPreload.ts', 'indicatorPreload.cjs'),
 		...(!production ? [node('test/smoke/src/main.ts', 'smoke.cjs'), node('test/latency/main.ts', 'latency.cjs')] : []),
 		browser('src/renderer.ts', 'renderer/renderer.js'),
 		browser('src/notice.ts', 'renderer/notice.js'),
+		browser('src/indicator.ts', 'renderer/indicator.js'),
 		...(!production ? [browser('test/smoke/fixtures/index.ts', 'browser-tests.js', { format: 'iife', globalName: 'browserTests' })] : []),
 	];
 }
@@ -105,6 +108,7 @@ export function resources(root: string, outputDirectory = join(root, 'out'), { r
 	return [
 		['src/workbench/index.html', 'renderer/index.html'],
 		['src/workbench/notice.html', 'renderer/notice.html'],
+		['src/workbench/indicator.html', 'renderer/indicator.html'],
 		['assets/desktop/app-icon.svg', 'renderer/app-icon.svg'],
 		// Tray icons, loaded by the main process next to its bundle.
 		['assets/tray', 'assets/tray'],

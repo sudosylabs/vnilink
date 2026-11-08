@@ -9,7 +9,7 @@ import { Emitter } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { IConfigurationMainService } from '../../configuration/electron-main/configurationMainService.js';
 import type { ConfigurationMainService } from '../../configuration/electron-main/configurationMainService.js';
-import { deviceName, type EngineEvent, type SessionPhase } from '../../engine/common/engine.js';
+import { deviceName, type EngineEvent, type ServiceKind, type SessionPhase } from '../../engine/common/engine.js';
 import type { EngineEventBatch } from '../../engine/common/engineService.js';
 import { IEngineMainService } from '../../engine/electron-main/engineMainService.js';
 import type { EngineMainService } from '../../engine/electron-main/engineMainService.js';
@@ -19,10 +19,12 @@ import { ILogService } from '../../log/common/log.js';
 export const IHostingMainService = createDecorator<HostingMainService>('hostingMainService');
 
 /** A paired device connected to this computer. */
-interface HostedPeer {
+export interface HostedPeer {
 	readonly id: string;
 	readonly name: string;
 	readonly phase: SessionPhase;
+	/** What it is using now, each kind once, in a stable order. */
+	readonly services: readonly ServiceKind[];
 }
 
 /** Whether this computer accepts paired devices, and who is connected to it. */
@@ -161,10 +163,12 @@ export class HostingMainService extends Disposable {
 			const devices = snapshot.snapshot.devices;
 			// A paired computer keeps an idle link to this one to know it is reachable;
 			// only a session carrying a service means someone is using this computer.
-			const inUse = new Set(services.services.filter(service => typeof service.phase === 'string').map(service => service.connectionId));
+			const live = services.services.filter(service => typeof service.phase === 'string');
+			const inUse = new Set(live.map(service => service.connectionId));
 			const sessions = hosted.sessions.filter(session => session.phase !== 'Stopping' && inUse.has(session.id)).map(session => {
 				const device = devices.find(candidate => candidate.endpoint_id === session.peer_id);
-				return { id: session.id, name: device ? deviceName(device) : session.peer_id, phase: session.phase };
+				const kinds = [...new Set(live.filter(service => service.connectionId === session.id).map(service => service.kind))].sort();
+				return { id: session.id, name: device ? deviceName(device) : session.peer_id, phase: session.phase, services: kinds };
 			});
 			this.update({ available: true, accepting: this.accepting, hosting: snapshot.snapshot.hosting, sessions });
 		} catch {

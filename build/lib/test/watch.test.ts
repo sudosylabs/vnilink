@@ -54,7 +54,7 @@ function sourceWatches(): string[] {
 
 suite('watch', () => {
 	suite('ApplicationWatcher', { timeout: 30_000 }, () => {
-		const entries = ['src/main.ts', 'src/preload.ts', 'src/noticePreload.ts', 'src/notice.ts', 'src/platform/engine/electron-utility/engineMain.ts', 'test/smoke/src/main.ts', 'test/latency/main.ts', 'test/smoke/fixtures/index.ts'];
+		const entries = ['src/main.ts', 'src/preload.ts', 'src/noticePreload.ts', 'src/notice.ts', 'src/indicatorPreload.ts', 'src/indicator.ts', 'src/platform/engine/electron-utility/engineMain.ts', 'test/smoke/src/main.ts', 'test/latency/main.ts', 'test/smoke/fixtures/index.ts'];
 		let root: string;
 		let watcher: ApplicationWatcher;
 		/** The first error the watcher reports after startup. */
@@ -75,6 +75,7 @@ suite('watch', () => {
 			await put('src/style.css', 'body { color: red; }');
 			await put('src/workbench/index.html', '<title>original</title>');
 			await put('src/workbench/notice.html', '<title>notice</title>');
+			await put('src/workbench/indicator.html', '<title>indicator</title>');
 			await put('assets/desktop/app-icon.svg', '<svg/>');
 			await put('node_modules/@phosphor-icons/core/LICENSE', 'phosphor');
 			await put('LICENSE.vscode.txt', 'MIT');

@@ -24,6 +24,8 @@
     "src/preload.ts",
     "src/notice.ts",
     "src/noticePreload.ts",
+    "src/indicator.ts",
+    "src/indicatorPreload.ts",
     "src/platform/engine/electron-utility/engineMain.ts",
     "src/assets.d.ts",
     "src/typings/desktop.d.ts",
