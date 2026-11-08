@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path';
 import { processOutput, ProcessRunner } from './processes.ts';
 import { assignExecutableUuids, darwinUsageDescriptions, executableUuids } from './macos/identity.ts';
 import { linuxSandbox, linuxSandboxProfile, systemProbe } from './prerequisites.ts';
-import { loadProduct, type Product } from './product.ts';
+import { loadProduct, productForQuality, type Product } from './product.ts';
 import { fileSha256, releaseInventory } from './inventory.ts';
 import { isLinux, isMacintosh, isWindows } from './platform.ts';
 
@@ -53,8 +53,13 @@ export async function electronExecutable(root: string, signal: AbortSignal, opti
 	return executable;
 }
 
+/** The checkout runs as VniLink Dev, apart from an installed release. */
+async function developmentProduct(root: string): Promise<Product> {
+	return productForQuality(await loadProduct(root), 'dev');
+}
+
 async function preparedElectron(root: string, signal: AbortSignal): Promise<string> {
-	const product = await loadProduct(root);
+	const product = await developmentProduct(root);
 	const branding = platformBranding(root, product, signal);
 	const output = join(root, '.build/electron');
 	const executable = join(output, branding.executable);
@@ -115,7 +120,7 @@ async function brandingFingerprint(root: string, product: Product): Promise<Reco
 	}
 	// macOS: what the bundle asks for and the executable UUIDs it identifies by.
 	const darwin: Record<string, string> = isMacintosh
-		? { usage: JSON.stringify(darwinUsageDescriptions), uuids: JSON.stringify(await executableUuids(require('electron') as string, developmentBundleIdentifier(product))) }
+		? { usage: JSON.stringify(darwinUsageDescriptions), uuids: JSON.stringify(await executableUuids(require('electron') as string, product.appId)) }
 		: {};
 	return { revision: String(brandingRevision), electron, platform: `${process.platform}-${process.arch}`, product: JSON.stringify(product), icons: JSON.stringify(icons), ...darwin };
 }
@@ -129,10 +134,6 @@ async function current(stamp: string, executable: string, fingerprint: string): 
 	}
 }
 
-function developmentBundleIdentifier(product: Product): string {
-	return `${product.appId}.dev`;
-}
-
 /** macOS names the menu bar, Dock and permission prompts after the bundle's Info.plist. */
 async function brandDarwin(root: string, product: Product, bundle: string, work: string, signal: AbortSignal): Promise<void> {
 	const resources = join(bundle, 'Contents/Resources');
@@ -142,8 +143,7 @@ async function brandDarwin(root: string, product: Product, bundle: string, work:
 	const values: readonly [string, string][] = [
 		['CFBundleName', product.nameLong],
 		['CFBundleDisplayName', product.nameLong],
-		// A development identifier keeps TCC grants and Launch Services apart from an installed release.
-		['CFBundleIdentifier', developmentBundleIdentifier(product)],
+		['CFBundleIdentifier', product.appId],
 		['CFBundleIconFile', iconName],
 		['CFBundleIconName', iconName],
 		...Object.entries(darwinUsageDescriptions),
@@ -153,7 +153,7 @@ async function brandDarwin(root: string, product: Product, bundle: string, work:
 	}
 	// Its own executable UUID, so local network privacy decides for this bundle alone.
 	const executable = join(bundle, 'Contents/MacOS/Electron');
-	await assignExecutableUuids(executable, developmentBundleIdentifier(product));
+	await assignExecutableUuids(executable, product.appId);
 	// The executable and Info.plist changed, which breaks their ad-hoc seals;
 	// nested helpers keep their own signatures.
 	await processOutput('codesign', ['--force', '--sign', '-', executable], { signal });
@@ -220,7 +220,7 @@ export async function allowLinuxSandbox(root: string, signal: AbortSignal): Prom
 	if (!isLinux) {
 		throw new Error('sandbox:linux allows the development Electron on Linux');
 	}
-	const product = await loadProduct(root);
+	const product = await developmentProduct(root);
 	const executable = join(root, '.build/electron', product.platforms.linux.executableName);
 	if (/["\n]/.test(executable)) {
 		throw new Error(`An AppArmor profile cannot name ${JSON.stringify(executable)}`);

@@ -104,7 +104,10 @@ jobs:
           tasks: package:installers
       - run: npm ci
       - run: npm run doctor -- --require package:installers
+      # The release is VniLink itself; every other build is VniLink Dev.
       - run: npm run package:installers
+        env:
+          VNILINK_QUALITY: stable
       - run: npm run verify:installers
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

@@ -78,12 +78,9 @@ export function planLaunch(context: LaunchContext): LaunchPlan {
 	return {
 		name: product.name,
 		appUserModelId: context.windows ? product.appId : undefined,
-		desktopName: desktopName(context.built),
+		// A dev build's product already names its own entry.
+		desktopName: product.linux.desktopFileName,
 		action: launchAction(context),
 	};
 }
 
-/** The product's desktop entry when built; from the source checkout, the same name with `.dev` before `.desktop`. */
-export function desktopName(built: boolean): string {
-	return built ? product.linux.desktopFileName : product.linux.desktopFileName.replace(/\.desktop$/, '.dev.desktop');
-}

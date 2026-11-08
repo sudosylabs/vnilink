@@ -18,16 +18,11 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, posix } from 'node:path';
 import { isLinux } from './platform.ts';
-import { loadProduct, type Product } from './product.ts';
+import { loadProduct, productForQuality, type Product } from './product.ts';
 
-/** The id the source checkout runs as: the product's with `.dev`. */
-export function developmentDesktopId(product: Product): string {
-	return `${product.appId}.dev`;
-}
-
-/** Where the entry and its icon go under `dataHome` (`$XDG_DATA_HOME`). */
+/** Where the entry and its icon go under `dataHome` (`$XDG_DATA_HOME`); `product` is the dev product. */
 export function developmentDesktopPaths(product: Product, dataHome: string): { readonly entry: string; readonly icon: string } {
-	const id = developmentDesktopId(product);
+	const id = product.appId;
 	return {
 		entry: join(dataHome, 'applications', `${id}.desktop`),
 		icon: join(dataHome, 'icons/hicolor/scalable/apps', `${id}.svg`),
@@ -42,15 +37,15 @@ function execArgument(value: string): string {
 	return `"${value.replace(/[\\"`$]/g, character => `\\${character}`).replace(/%/g, '%%').replace(/\\/g, '\\\\')}"`;
 }
 
-/** The entry that starts the development Electron in `root` and opens invitations with it. */
+/** The entry that starts the development Electron in `root`, branded as the dev `product`, and opens invitations with it. */
 export function developmentDesktopEntry(product: Product, root: string): string {
 	// The entry is read on Linux, so its paths are Linux paths whichever computer writes it.
 	const executable = posix.join(root, '.build/electron', product.platforms.linux.executableName);
-	const id = developmentDesktopId(product);
+	const id = product.appId;
 	return [
 		'[Desktop Entry]',
 		'Type=Application',
-		`Name=${product.nameLong} (development)`,
+		`Name=${product.nameLong}`,
 		`Comment=${product.description}`,
 		`Exec=${execArgument(executable)} ${execArgument(root)} %U`,
 		`Icon=${id}`,
@@ -77,7 +72,7 @@ async function replace(path: string, contents: string | Buffer): Promise<void> {
 
 /** Writes the development entry and icon under `home`, or removes them. */
 export async function writeDevelopmentDesktopEntry(root: string, home: string, remove: boolean, signal: AbortSignal): Promise<string> {
-	const product = await loadProduct(root);
+	const product = productForQuality(await loadProduct(root), 'dev');
 	const paths = developmentDesktopPaths(product, home);
 	if (remove) {
 		await rm(paths.entry, { force: true });

@@ -16,8 +16,8 @@
 !include LogicLib.nsh
 
 !define MUI_LICENSEPAGE_BUTTON "$(^NextBtn)"
-!define MUI_LICENSEPAGE_TEXT_TOP "VniLink is free software, licensed under the GNU Affero General Public License."
-!define MUI_LICENSEPAGE_TEXT_BOTTOM "You do not need to accept this license to install or use VniLink: it sets out your rights to share and change it. The licenses of the components VniLink includes are in the licenses folder where it is installed."
+!define MUI_LICENSEPAGE_TEXT_TOP "${PRODUCT_NAME} is free software, licensed under the GNU Affero General Public License."
+!define MUI_LICENSEPAGE_TEXT_BOTTOM "You do not need to accept this license to install or use ${PRODUCT_NAME}: it sets out your rights to share and change it. The licenses of the components ${PRODUCT_NAME} includes are in the licenses folder where it is installed."
 
 # VniLink installs for the current user without elevation, so the page asking who
 # to install for is skipped, in setup and in the uninstaller.
@@ -28,8 +28,8 @@
 # electron-builder compiles the uninstaller on its own, where these would go unreferenced.
 !ifndef BUILD_UNINSTALLER
 	!macro customWelcomePage
-		!define MUI_WELCOMEPAGE_TITLE "Welcome to VniLink"
-		!define MUI_WELCOMEPAGE_TEXT "Setup installs VniLink for you on this computer, without asking for administrator rights.$\r$\n$\r$\nVniLink connects your computers, so you can reach one from another.$\r$\n$\r$\nClick Next to continue."
+		!define MUI_WELCOMEPAGE_TITLE "Welcome to ${PRODUCT_NAME}"
+		!define MUI_WELCOMEPAGE_TEXT "Setup installs ${PRODUCT_NAME} for you on this computer, without asking for administrator rights.$\r$\n$\r$\n${PRODUCT_NAME} connects your computers, so you can reach one from another.$\r$\n$\r$\nClick Next to continue."
 		!insertmacro MUI_PAGE_WELCOME
 	!macroend
 
@@ -71,7 +71,8 @@
 # .vnl naming it, so the extension would point at nothing. Clear that only while
 # .vnl still names VniLink's type: another application may have taken it since.
 # The extension and type name are product.json's invitation, as package.ts
-# registers them.
+# registers them; ${PRODUCT_NAME} is electron-builder's define for the
+# product's name, which a dev build gives as VniLink Dev.
 !macro customUnInstall
 	Delete "$DESKTOP\${SHORTCUT_NAME}.lnk"
 	ReadRegStr $0 SHELL_CONTEXT "Software\Classes\.vnl" ""

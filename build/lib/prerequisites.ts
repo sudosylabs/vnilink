@@ -377,8 +377,10 @@ export function linuxSandboxProfile(root: string): string {
 }
 
 async function linuxExecutable(root: string, probe: Probe): Promise<string> {
+	// The checkout's Electron is branded as the dev product, whose executable
+	// is the product's with `-dev` (`productForQuality`, which this file cannot import).
 	const product = JSON.parse(await probe.readFile(posix.join(root, 'product.json')) ?? '{}') as { platforms?: { linux?: { executableName?: string } } };
-	return posix.join(root, '.build/electron', product.platforms?.linux?.executableName ?? 'vnilink');
+	return posix.join(root, '.build/electron', `${product.platforms?.linux?.executableName ?? 'vnilink'}-dev`);
 }
 
 /**

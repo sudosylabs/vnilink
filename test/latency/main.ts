@@ -240,7 +240,7 @@ async function sampleEverySecond(path: string, until: Promise<unknown>, sample: 
 
 async function host(driver: WindowDriver): Promise<void> {
 	if (!isLinux && !await screenRecording(driver)) {
-		throw new Error('Screen Recording is not granted to the development VniLink (.build/electron/VniLink.app). Allow it in System Settings › Privacy & Security › Screen & System Audio Recording, then run again.');
+		throw new Error('Screen Recording is not granted to VniLink Dev, this checkout’s development application (.build/electron/VniLink Dev.app). Allow it in System Settings › Privacy & Security › Screen & System Audio Recording, then run again.');
 	}
 	const snapshot = await engine(driver, { type: 'snapshot' });
 	const endpoint = record(snapshot.snapshot) ? snapshot.snapshot.endpoint_id : undefined;

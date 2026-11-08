@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use super::StoreFailure;
+use super::{Quality, StoreFailure};
 
 const DATABASE_NAME: &str = "installation.sqlite3";
 const LOCK_NAME: &str = "installation.lock";
@@ -68,15 +68,19 @@ fn sibling(database: &Path, suffix: &str) -> PathBuf {
 pub(crate) fn linux_app_dir(
     home: Option<&Path>,
     xdg: Option<&std::ffi::OsStr>,
+    quality: Quality,
 ) -> Result<PathBuf, ()> {
     if let Some(xdg) = xdg {
         let candidate = Path::new(xdg);
         if !xdg.is_empty() && candidate.is_absolute() {
-            return Ok(candidate.join("vnilink"));
+            return Ok(candidate.join(quality.linux_folder()));
         }
     }
     let home = home.filter(|path| !path.as_os_str().is_empty()).ok_or(())?;
-    Ok(home.join(".local").join("share").join("vnilink"))
+    Ok(home
+        .join(".local")
+        .join("share")
+        .join(quality.linux_folder()))
 }
 
 /// Longest matching mount's file system type. `None` when no mount contains `path`.
@@ -262,8 +266,8 @@ fn path_has_prefix(path: &[u8], mount: &[u8]) -> bool {
     path.starts_with(mount) && path.get(mount.len()) == Some(&b'/')
 }
 
-pub(crate) fn production_paths() -> Result<InstallationPaths, StoreFailure> {
-    prepare_application(&application_dir()?)
+pub(crate) fn production_paths(quality: Quality) -> Result<InstallationPaths, StoreFailure> {
+    prepare_application(&application_dir(quality)?)
 }
 
 /// Establishes the engine namespace beneath the platform application directory.
@@ -312,12 +316,12 @@ fn ensure_application_parent(path: &Path) -> Result<(), StoreFailure> {
     }
 }
 
-fn application_dir() -> Result<PathBuf, StoreFailure> {
+fn application_dir(quality: Quality) -> Result<PathBuf, StoreFailure> {
     #[cfg(target_os = "linux")]
     {
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let xdg = std::env::var_os("XDG_DATA_HOME");
-        let app = linux_app_dir(home.as_deref(), xdg.as_deref())
+        let app = linux_app_dir(home.as_deref(), xdg.as_deref(), quality)
             .map_err(|_| StoreFailure::Unavailable)?;
         let base = app.parent().ok_or(StoreFailure::Unavailable)?;
         ensure_platform_dir(base)?;
@@ -335,7 +339,7 @@ fn application_dir() -> Result<PathBuf, StoreFailure> {
         if location_is_remote(&base)? {
             return Err(StoreFailure::Unavailable);
         }
-        Ok(base.join("VniLink"))
+        Ok(base.join(quality.folder()))
     }
 }
 

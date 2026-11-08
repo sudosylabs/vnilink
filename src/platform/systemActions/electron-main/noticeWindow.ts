@@ -12,6 +12,7 @@ import { isMacintosh } from '../../../base/common/platform.js';
 import { getWindowColors } from '../../theme/common/windowColors.js';
 import { resolveWindowMaterial, windowPlatform } from '../../window/common/windowMaterial.js';
 import { WindowMaterial } from '../../windows/electron-main/windowMaterial.js';
+import { product } from '../../product/common/product.js';
 import { isNoticeAnswer, NOTICE_MATERIAL_CHANNEL, NOTICE_RESPOND_CHANNEL, NOTICE_SHOW_CHANNEL, NOTICE_URL, type NoticeContent } from '../common/notice.js';
 import type { NoticePrompt } from './systemActionNotice.js';
 
@@ -22,24 +23,24 @@ const height = 168;
 /** Cancel is the first answer, as in `SystemActionNotices`. */
 const answers = { cancel: 0, now: 1 } as const;
 
+/** Where a floating window goes, and the preload its page gets. */
+export interface FloatingWindowOptions {
+	readonly bounds: Electron.Rectangle;
+	/** The preload bundle beside the main process's. */
+	readonly preload: string;
+	/** Whether the person may close it with the system's shortcut. */
+	readonly closable: boolean;
+}
+
 /**
- * Shows the notice in a small window of its own, in front of everything and
- * on every desktop, on the screen with the pointer, on the workbench's
- * backdrop: Liquid Glass or vibrancy on macOS, Mica on Windows 11. It answers
- * only to its own page, and closes when its signal aborts.
+ * A small window of its own, in front of everything and on every desktop,
+ * on the workbench's backdrop: Liquid Glass or vibrancy on macOS, Mica on
+ * Windows 11. It starts hidden; its owner loads its page and shows it.
  */
-export const windowPrompt: NoticePrompt = (content: NoticeContent, signal: AbortSignal) => new Promise<number | undefined>(resolve => {
-	if (signal.aborted) {
-		resolve(undefined);
-		return;
-	}
+export function createFloatingWindow(options: FloatingWindowOptions): { readonly window: BrowserWindow; readonly backdrop: WindowMaterial } {
 	const material = resolveWindowMaterial(windowPlatform, release(), nativeTheme.prefersReducedTransparency, nativeTheme.shouldUseHighContrastColors);
-	const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
 	const window = new BrowserWindow({
-		width,
-		height,
-		x: Math.round(area.x + (area.width - width) / 2),
-		y: Math.round(area.y + (area.height - height) / 3),
+		...options.bounds,
 		show: false,
 		// macOS keeps its frame, for the system's rounded corners, edge and shadow
 		// around the glass, with the title bar and its buttons hidden.
@@ -50,13 +51,12 @@ export const windowPrompt: NoticePrompt = (content: NoticeContent, signal: Abort
 		minimizable: false,
 		maximizable: false,
 		fullscreenable: false,
-		// Only an answer closes it; a stray Command-W must not dismiss the countdown.
-		closable: false,
+		closable: options.closable,
 		alwaysOnTop: true,
-		title: 'VniLink',
+		title: product.name,
 		backgroundColor: material !== 'none' ? '#00000000' : getWindowColors(nativeTheme.shouldUseDarkColors).raisedBackground,
 		webPreferences: {
-			preload: join(__dirname, 'noticePreload.cjs'),
+			preload: join(__dirname, options.preload),
 			sandbox: true,
 			contextIsolation: true,
 			nodeIntegration: false,
@@ -67,7 +67,28 @@ export const windowPrompt: NoticePrompt = (content: NoticeContent, signal: Abort
 	if (isMacintosh) {
 		window.setWindowButtonVisibility(false);
 	}
-	const backdrop = new WindowMaterial(window);
+	window.setAlwaysOnTop(true, 'floating');
+	window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+	window.removeMenu();
+	return { window, backdrop: new WindowMaterial(window) };
+}
+
+/**
+ * Shows the notice in a floating window on the screen with the pointer. It
+ * answers only to its own page, and closes when its signal aborts.
+ */
+export const windowPrompt: NoticePrompt = (content: NoticeContent, signal: AbortSignal) => new Promise<number | undefined>(resolve => {
+	if (signal.aborted) {
+		resolve(undefined);
+		return;
+	}
+	const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+	const { window, backdrop } = createFloatingWindow({
+		bounds: { width, height, x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 3) },
+		preload: 'noticePreload.cjs',
+		// Only an answer closes it; a stray Command-W must not dismiss the countdown.
+		closable: false,
+	});
 	let settled = false;
 	const finish = (answer: number | undefined): void => {
 		if (settled) {
@@ -85,9 +106,6 @@ export const windowPrompt: NoticePrompt = (content: NoticeContent, signal: Abort
 		finish(undefined);
 	};
 	signal.addEventListener('abort', abort);
-	window.setAlwaysOnTop(true, 'floating');
-	window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-	window.removeMenu();
 	const contents = window.webContents;
 	contents.ipc.on(NOTICE_RESPOND_CHANNEL, (event, answer: unknown) => {
 		// Only this window's own page answers.

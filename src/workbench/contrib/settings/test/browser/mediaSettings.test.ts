@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------------------------
 
 import assert from 'assert';
+import { isMacintosh } from '../../../../../base/common/platform.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { click, edit, element, SettingsFixture, settle } from './settingsFixture.js';
 
@@ -62,5 +63,12 @@ suite('Media settings page', () => {
 		await settle();
 		assert.notStrictEqual(offered()?.hidden, false);
 		assert.ok(!cameraRow().textContent.includes('isn’t allowed'));
+	});
+	(isMacintosh ? test : test.skip)('system sound sends the person to the recording access it needs', async () => {
+		const row = element<HTMLSelectElement>(page, 'select[data-setting="media.systemAudio"]').closest<HTMLElement>('.setting-row');
+		assert.ok(row, 'the system audio picker is not in a setting row');
+		click(element<HTMLButtonElement>(row, 'button.settings-button'));
+		await settle();
+		assert.ok(fixture.permissions.commands.some(command => command.type === 'openSettings' && command.kind === 'screen'));
 	});
 });

@@ -269,7 +269,7 @@ suite('release build', () => {
 				const glass = isMacintosh ? ['native/elg/index.cjs', 'native/elg/elg.node', 'licenses/elg.txt'] : [];
 				const names = [
 					'main.cjs', 'engine.cjs', 'preload.cjs', 'renderer/renderer.js', 'renderer/renderer.css', 'renderer/index.html', 'noticePreload.cjs', 'renderer/notice.js',
-					'renderer/notice.css', 'renderer/notice.html', 'assets/tray/idleTemplate.png', 'native/vnilink.node', 'native/build.json',
+					'renderer/notice.css', 'renderer/notice.html', 'indicatorPreload.cjs', 'renderer/indicator.js', 'renderer/indicator.css', 'renderer/indicator.html', 'assets/tray/idleTemplate.png', 'native/vnilink.node', 'native/build.json',
 					'licenses/native-codecs/native-codecs.txt', 'relink/source/Cargo.lock', ...glass
 				];
 				for (const name of names) {

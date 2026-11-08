@@ -33,8 +33,8 @@ function session(id: string, peer: string, phase = 'Active'): SessionInfo {
 	return { id, generation: '1', role: 'Host', phase, peer_id: peer };
 }
 
-function service(connectionId: string, phase: ServiceSummary['phase'] = 'Active'): ServiceSummary {
-	return { id: `s${connectionId}`, connectionId, generation: '1', peer_id: 'x', kind: 'Desktop', phase };
+function service(connectionId: string, phase: ServiceSummary['phase'] = 'Active', kind: ServiceSummary['kind'] = 'Desktop'): ServiceSummary {
+	return { id: `s${connectionId}-${kind}`, connectionId, generation: '1', peer_id: 'x', kind, phase };
 }
 
 /** Lets the service finish what the last change started; the engine answers at once. */
@@ -128,7 +128,12 @@ suite('HostingMainService', () => {
 	test('a connected device is named by its pet name, then its host name', async () => {
 		const hosting = await startService();
 		await connect([session('1', 'a'), session('2', 'b', 'Negotiating')], [service('1'), service('2', 'Waiting')]);
-		assert.deepStrictEqual(hosting.status.sessions, [{ id: '1', name: 'Work laptop', phase: 'Active' }, { id: '2', name: 'host-b', phase: 'Negotiating' }]);
+		assert.deepStrictEqual(hosting.status.sessions, [{ id: '1', name: 'Work laptop', phase: 'Active', services: ['Desktop'] }, { id: '2', name: 'host-b', phase: 'Negotiating', services: ['Desktop'] }]);
+	});
+	test('what a device uses is each live kind of service once', async () => {
+		const hosting = await startService();
+		await connect([session('1', 'a')], [service('1', 'Active', 'Files'), service('1'), service('1', 'Active', 'Files'), service('1', { Closed: { cause: 'Local' } }, 'Terminal')]);
+		assert.deepStrictEqual(hosting.status.sessions.map(peer => peer.services), [['Desktop', 'Files']]);
 	});
 	test('a stopping session or a closed service is not someone connected', async () => {
 		const hosting = await startService();

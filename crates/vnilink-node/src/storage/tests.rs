@@ -19,13 +19,13 @@ use vnilink_app::{CredentialStore, FfiError};
 
 use super::crypto::KEY_LEN;
 use super::database::{arm_schema_fault, expected_vfs_name, SchemaFault, CREATE_SQL};
-use super::key::{FileVault, KeyAccess, KeyVault, KeyringVault, MemoryVault, KEY_SERVICE};
+use super::key::{FileVault, KeyAccess, KeyVault, KeyringVault, MemoryVault};
 #[cfg(unix)]
 use super::paths::linux_app_dir;
 use super::paths::{self, linux_fstype_is_remote, linux_mount_fstype};
 #[cfg(unix)]
 use super::paths::{linux_path_is_remote, resolve_mount_path};
-use super::{recover_installation, EncryptedInstallationStore, Failure};
+use super::{recover_installation, EncryptedInstallationStore, Failure, Quality};
 use zeroize::Zeroizing;
 
 const OLD_SENTINEL: &[u8] = b"VNILINK-PLAINTEXT-SENTINEL-OLD-9f3c1a";
@@ -129,23 +129,54 @@ fn child_env_is(mode: &str) -> bool {
 fn linux_paths_follow_absolute_xdg_then_home() {
     let home = Path::new("/home/someone");
     assert_eq!(
-        linux_app_dir(Some(home), Some(std::ffi::OsStr::new("/var/data"))).unwrap(),
+        linux_app_dir(
+            Some(home),
+            Some(std::ffi::OsStr::new("/var/data")),
+            Quality::Stable
+        )
+        .unwrap(),
         PathBuf::from("/var/data/vnilink")
     );
     assert_eq!(
-        linux_app_dir(Some(home), Some(std::ffi::OsStr::new(""))).unwrap(),
+        linux_app_dir(Some(home), Some(std::ffi::OsStr::new("")), Quality::Stable).unwrap(),
         PathBuf::from("/home/someone/.local/share/vnilink")
     );
     assert_eq!(
-        linux_app_dir(Some(home), Some(std::ffi::OsStr::new("relative"))).unwrap(),
+        linux_app_dir(
+            Some(home),
+            Some(std::ffi::OsStr::new("relative")),
+            Quality::Stable
+        )
+        .unwrap(),
         PathBuf::from("/home/someone/.local/share/vnilink")
     );
     assert_eq!(
-        linux_app_dir(None, Some(std::ffi::OsStr::new("/var/data"))).unwrap(),
+        linux_app_dir(
+            None,
+            Some(std::ffi::OsStr::new("/var/data")),
+            Quality::Stable
+        )
+        .unwrap(),
         PathBuf::from("/var/data/vnilink")
     );
-    assert!(linux_app_dir(None, Some(std::ffi::OsStr::new("relative"))).is_err());
-    assert!(linux_app_dir(None, None).is_err());
+    assert!(linux_app_dir(
+        None,
+        Some(std::ffi::OsStr::new("relative")),
+        Quality::Stable
+    )
+    .is_err());
+    assert!(linux_app_dir(None, None, Quality::Stable).is_err());
+}
+
+#[test]
+fn a_dev_build_keeps_its_installation_apart_from_the_release() {
+    #[cfg(unix)]
+    assert_eq!(
+        linux_app_dir(Some(Path::new("/home/someone")), None, Quality::Dev).unwrap(),
+        PathBuf::from("/home/someone/.local/share/vnilink-dev")
+    );
+    assert_ne!(Quality::Dev.folder(), Quality::Stable.folder());
+    assert_ne!(Quality::Dev.key_service(), Quality::Stable.key_service());
 }
 
 #[test]
@@ -1223,7 +1254,8 @@ fn reset_cli_stops_before_resolving_a_path_without_confirmation() {
 #[ignore = "writes one unique Keychain entry and may prompt"]
 fn keychain_round_trip_uses_a_disposable_entry() {
     let service = format!("com.vnilink.storage.test.{}", unique());
-    assert_ne!(service, KEY_SERVICE);
+    assert_ne!(service, Quality::Stable.key_service());
+    assert_ne!(service, Quality::Dev.key_service());
     let vault = Arc::new(KeyringVault::named(&service, "installation-key-test"));
     let _ = KeyVault::delete(vault.as_ref());
     let fixture = Fixture::new();

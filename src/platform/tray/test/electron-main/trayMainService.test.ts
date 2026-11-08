@@ -18,7 +18,7 @@ import { traySupported } from '../../electron-main/traySupport.js';
 
 const ready: HostingStatus = { available: true, accepting: true, hosting: true, sessions: [] };
 
-const connected: HostingStatus = { ...ready, sessions: [{ id: '7', name: 'Work laptop', phase: 'Active' }, { id: '9', name: 'host-b', phase: 'Negotiating' }] };
+const connected: HostingStatus = { ...ready, sessions: [{ id: '7', name: 'Work laptop', phase: 'Active', services: ['Desktop'] }, { id: '9', name: 'host-b', phase: 'Negotiating', services: ['Files'] }] };
 
 const paused: HostingStatus = { ...ready, accepting: false, hosting: false };
 
@@ -53,7 +53,7 @@ suite('tray presentation', () => {
 		});
 	}
 	test('the menu offers a disconnect per device, stopping connections, and Open and Quit', () => {
-		assert.deepStrictEqual(labels(trayMenu(connected)), ['2 devices connected', 'Connected to this computer', 'Disconnect Work laptop', 'Disconnect host-b (connecting)', 'Stop Accepting Connections', 'Open VniLink', 'Quit VniLink']);
+		assert.deepStrictEqual(labels(trayMenu(connected)), ['2 devices connected', 'Show Connected Computers', 'Connected to this computer', 'Disconnect Work laptop', 'Disconnect host-b (connecting)', 'Stop Accepting Connections', 'Open VniLink', 'Quit VniLink']);
 	});
 	test('each disconnect entry ends its own session', () => {
 		const sessions = trayMenu(connected).flatMap(entry => 'action' in entry && entry.action?.kind === 'disconnect' ? [entry.action.sessionId] : []);
@@ -281,6 +281,14 @@ suite('TrayMainService', () => {
 		const { icon } = createTray(new TestTrayEnvironment('win32'));
 		icon.choose('Disconnect Work laptop');
 		assert.deepStrictEqual(hosting.requests, [['disconnect', '7']]);
+	});
+	test('Show Connected Computers asks for who is connected', () => {
+		const { tray, icon } = createTray(new TestTrayEnvironment('win32'));
+		hosting.set(connected);
+		let requests = 0;
+		disposables.add(tray.onDidRequestConnections(() => requests++));
+		icon.choose('Show Connected Computers');
+		assert.strictEqual(requests, 1);
 	});
 	test('Stop Accepting Connections pauses hosting', () => {
 		const { icon } = createTray(new TestTrayEnvironment('win32'));

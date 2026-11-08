@@ -22,7 +22,7 @@ export const ITrayMainService = createDecorator<TrayMainService>('trayMainServic
 /** Matches the artwork rendered by `build/lib/trayAssets.ts`. */
 type TrayState = 'idle' | 'active' | 'paused';
 
-export type TrayAction = { readonly kind: 'open' | 'quit' | 'pause' | 'resume' } | { readonly kind: 'disconnect'; readonly sessionId: string };
+export type TrayAction = { readonly kind: 'open' | 'quit' | 'pause' | 'resume' | 'connections' } | { readonly kind: 'disconnect'; readonly sessionId: string };
 
 /** A menu row before Electron sees it, so the menu can be compared and tested. */
 export type TrayMenuEntry = { readonly type: 'separator' } | { readonly label: string; readonly enabled: boolean; readonly action?: TrayAction };
@@ -55,7 +55,11 @@ export function trayStatusLine(status: HostingStatus): string {
 export function trayMenu(status: HostingStatus): TrayMenuEntry[] {
 	const entries: TrayMenuEntry[] = [{ label: trayStatusLine(status), enabled: false }];
 	if (status.sessions.length) {
-		entries.push({ type: 'separator' }, { label: nls.localize('tray.connected', 'Connected to this computer'), enabled: false });
+		entries.push(
+			{ type: 'separator' },
+			{ label: nls.localize('tray.showConnected', 'Show Connected Computers'), enabled: true, action: { kind: 'connections' } },
+			{ label: nls.localize('tray.connected', 'Connected to this computer'), enabled: false },
+		);
 		for (const session of status.sessions) {
 			const label = session.phase === 'Active'
 				? nls.localize('tray.disconnect', 'Disconnect {0}', session.name)
@@ -183,6 +187,9 @@ export class TrayMainService extends Disposable {
 	private readonly windowRequested = this._register(new Emitter<void>());
 	/** The owner asked to see the window. */
 	public readonly onDidRequestWindow = this.windowRequested.event;
+	private readonly connectionsRequested = this._register(new Emitter<void>());
+	/** The owner asked to see who is connected. */
+	public readonly onDidRequestConnections = this.connectionsRequested.event;
 	private icon: TrayIcon | undefined;
 	private shownImage: string | undefined;
 	private shownMenu: string | undefined;
@@ -247,6 +254,9 @@ export class TrayMainService extends Disposable {
 		switch (action.kind) {
 			case 'open':
 				this.windowRequested.fire();
+				return;
+			case 'connections':
+				this.connectionsRequested.fire();
 				return;
 			case 'quit':
 				this.environment.quit();

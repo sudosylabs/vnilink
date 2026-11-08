@@ -201,7 +201,7 @@ export async function packageApplication(root: string, signal: AbortSignal): Pro
 		await access(join(layout.resources, 'licenses/native-codecs/native-codecs.txt'));
 		await access(join(layout.resources, 'relink/source/Cargo.lock'));
 		const packager = await readJson(join(root, 'node_modules/electron-builder/package.json'));
-		const packaging = { appId: product.appId, version: manifest.version, electronVersion: electron.version, packagerVersion: packager.version, platform: process.platform, architecture: process.arch, signing, executable: relative(directory, layout.executable).split('\\').join('/'), asarSha256: createHash('sha256').update(await readFile(layout.asar)).digest('hex'), nativeSha256: createHash('sha256').update(await readFile(layout.native)).digest('hex'), files: await packageInventory(directory) };
+		const packaging = { appId: product.appId, quality: manifest.quality, version: manifest.version, electronVersion: electron.version, packagerVersion: packager.version, platform: process.platform, architecture: process.arch, signing, executable: relative(directory, layout.executable).split('\\').join('/'), asarSha256: createHash('sha256').update(await readFile(layout.asar)).digest('hex'), nativeSha256: createHash('sha256').update(await readFile(layout.native)).digest('hex'), files: await packageInventory(directory) };
 		await writeFile(join(directory, 'packaging-manifest.json'), JSON.stringify(packaging, null, 2) + '\n');
 		await verifyReleaseFiles(stage);
 		signal.throwIfAborted();

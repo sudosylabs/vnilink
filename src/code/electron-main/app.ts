@@ -31,6 +31,7 @@ import { electronScreenHostingEnvironment, IScreenHostingMainService, ScreenHost
 import { electronTrayEnvironment, ITrayMainService, TrayMainService } from '../../platform/tray/electron-main/trayMainService.js';
 import { ISystemActionNoticeMainService, SystemActionNoticeMainService } from '../../platform/systemActions/electron-main/systemActionNotice.js';
 import { AdmissionNoticeMainService, IAdmissionNoticeMainService } from '../../platform/hosting/electron-main/admissionNotice.js';
+import { ISessionIndicatorMainService, SessionIndicatorMainService } from '../../platform/hosting/electron-main/sessionIndicator.js';
 import { traySupported } from '../../platform/tray/electron-main/traySupport.js';
 import { SyncDescriptor } from '../../platform/instantiation/common/descriptors.js';
 import type { ServicesAccessor } from '../../platform/instantiation/common/instantiation.js';
@@ -89,8 +90,8 @@ interface ApplicationOptions {
 	readonly selfCheck?: { readonly output: string; readonly profile: string };
 }
 
-/** Files the `vnilink://app/` protocol serves: the workbench and the restart notice. Everything else is not found. */
-const workbenchFiles = new Set(['/index.html', '/renderer.js', '/renderer.css', '/app-icon.svg', '/notice.html', '/notice.js', '/notice.css']);
+/** Files the `vnilink://app/` protocol serves: the workbench, the notice and the connected-computers window. Everything else is not found. */
+const workbenchFiles = new Set(['/index.html', '/renderer.js', '/renderer.css', '/app-icon.svg', '/notice.html', '/notice.js', '/notice.css', '/indicator.html', '/indicator.js', '/indicator.css']);
 
 /**
  * Main-process composition: creates services, exposes them to windows over
@@ -144,6 +145,7 @@ export class VniLinkApplication extends Disposable {
 			[ITrayMainService, new SyncDescriptor(TrayMainService, [electronTrayEnvironment])],
 			[ISystemActionNoticeMainService, new SyncDescriptor(SystemActionNoticeMainService)],
 			[IAdmissionNoticeMainService, new SyncDescriptor(AdmissionNoticeMainService)],
+			[ISessionIndicatorMainService, new SyncDescriptor(SessionIndicatorMainService)],
 			[IPermissionsMainService, new SyncDescriptor(PermissionsMainService)],
 			[IInvitationsMainService, new SyncDescriptor(InvitationsMainService, [readInvitation])],
 			[IApplicationLocationMainService, new SyncDescriptor(ApplicationLocationMainService, [electronApplicationLocationEnvironment])],
@@ -212,6 +214,8 @@ export class VniLinkApplication extends Disposable {
 				// start using it; its user sees and answers it.
 				accessor.get(ISystemActionNoticeMainService).start();
 				accessor.get(IAdmissionNoticeMainService).start();
+				// Who is connected shows on screen whenever it changes.
+				accessor.get(ISessionIndicatorMainService).start();
 			});
 			if (await traySupported()) {
 				this.checkRunning();
@@ -313,8 +317,12 @@ export class VniLinkApplication extends Disposable {
 
 	private createTray(accessor: ServicesAccessor, windowRequests: MainWindowRequests): void {
 		const tray = accessor.get(ITrayMainService);
+		const indicator = accessor.get(ISessionIndicatorMainService);
 		this._register(tray.onDidRequestWindow(() => {
 			windowRequests.request();
+		}));
+		this._register(tray.onDidRequestConnections(() => {
+			indicator.show();
 		}));
 		tray.create();
 	}

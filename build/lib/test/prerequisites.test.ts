@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, suite, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { formatDoctor } from '../doctor.ts';
+import { productForQuality, readProduct } from '../product.ts';
 import {
 	assertTaskReady, checkRequirement, checkTasks, distributionOf, firstBuildDownloads, fixLines, installCommand, latencyPortalGrants, linuxSandbox,
 	linuxSandboxProfile, loadManifest, rustChannel, systemPackages, taskRequirements, type CheckResult, type Host, type Platform, type Probe, type TaskReport,
@@ -394,8 +395,8 @@ suite('prerequisites', () => {
 			assert.strictEqual(manifest.platforms.win32.rustTarget, 'x86_64-pc-windows-gnu');
 		});
 	});
-	suite('Chromium sandbox', () => {
-		const restricted = { '/proc/sys/kernel/apparmor_restrict_unprivileged_userns': '1\n', '/repo/product.json': JSON.stringify({ platforms: { linux: { executableName: 'vnilink' } } }) };
+	suite('Chromium sandbox', async () => {
+		const restricted = { '/proc/sys/kernel/apparmor_restrict_unprivileged_userns': '1\n', '/repo/product.json': await readFile(join(root, 'product.json'), 'utf8') };
 		test('is ready when AppArmor does not restrict user namespaces', async () => {
 			assert.strictEqual((await linuxSandbox('/repo', fakeProbe({ contents: { '/proc/sys/kernel/apparmor_restrict_unprivileged_userns': '0\n' } }), {})).status, 'ready');
 		});
@@ -415,7 +416,7 @@ suite('prerequisites', () => {
 			assert.strictEqual((await linuxSandbox('/repo', fakeProbe({ contents: restricted, files: [`/etc/apparmor.d/${linuxSandboxProfile('/repo')}`] }), {})).status, 'ready');
 		});
 		// A prepared executable is asked for its AppArmor label, which a profile changes.
-		const executable = '/repo/.build/electron/vnilink';
+		const executable = `/repo/.build/electron/${productForQuality(await readProduct(root), 'dev').platforms.linux.executableName}`;
 		const label = `${executable} -e process.stdout.write(require('node:fs').readFileSync('/proc/self/attr/current', 'utf8'))`;
 		test('is missing when the prepared executable runs unconfined', async () => {
 			assert.strictEqual((await linuxSandbox('/repo', fakeProbe({ contents: restricted, files: [executable], runs: { [label]: 'unconfined' } }), {})).status, 'missing');

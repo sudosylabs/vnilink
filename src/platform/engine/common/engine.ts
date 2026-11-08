@@ -99,7 +99,7 @@ export interface VideoCodecCaps {
 
 export interface RelayInput { url: string; authenticated: boolean; replacementToken: string; }
 
-type ServiceKind = 'Desktop' | 'Files' | 'Terminal' | 'Camera' | 'SystemAudio' | 'Microphone' | 'System' | 'ScreenSnapshot';
+export type ServiceKind = 'Desktop' | 'Files' | 'Terminal' | 'Camera' | 'SystemAudio' | 'Microphone' | 'System' | 'ScreenSnapshot';
 
 interface ServiceSummary {
 	id: string; connectionId: string; generation: string; peer_id: string;
