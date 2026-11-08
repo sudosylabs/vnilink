@@ -35,7 +35,11 @@ const kinds = new Map<string, MediaSourceKind>(Object.entries({
 		devices: 'audio', kind: 'microphone', automaticName: nls.localize('media.default', 'System default'), failed: nls.localize('media.audioFailed', 'Audio sources could not be checked. Check system access and audio devices.'),
 		permission: { kind: 'microphone', missing: nls.localize('media.microphoneMissing', 'Microphone access isn’t allowed yet.') },
 	},
-	'media.systemAudio': { devices: 'audio', kind: 'system', automaticName: nls.localize('media.default', 'System default'), failed: nls.localize('media.audioFailed', 'Audio sources could not be checked. Check system access and audio devices.') },
+	'media.systemAudio': {
+		devices: 'audio', kind: 'system', automaticName: nls.localize('media.default', 'System default'), failed: nls.localize('media.audioFailed', 'Audio sources could not be checked. Check system access and audio devices.'),
+		// macOS lists system sound only to an app it lets record the screen and system audio.
+		...(isMacintosh ? { permission: { kind: 'screen', missing: nls.localize('media.systemAudioMissing', 'Screen and system audio recording isn’t allowed yet.') } } : {}),
+	},
 }));
 
 /**
