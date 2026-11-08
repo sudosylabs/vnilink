@@ -15,6 +15,7 @@ import { isChannelRequest } from '../common/dataChannel.js';
 import { engineErrorCategory, record } from '../common/engine.js';
 import type { EngineEvent } from '../common/engine.js';
 import { ENGINE_HOST_CONNECTION, type EngineEventBatch } from '../common/engineService.js';
+import { product } from '../../product/common/product.js';
 import { DataChannelHost } from './dataChannelHost.js';
 import type { NativeDataChannel } from './dataChannelHost.js';
 
@@ -40,9 +41,12 @@ interface NativeEngine {
 	admit(kind: string, sessionId: string, generation: string): Promise<void>;
 }
 
-/** `openEngine(true)` sets aside an installation the engine cannot read and opens a new one; a readable one is opened as it is. */
+/**
+ * `openEngine(true)` sets aside an installation the engine cannot read and opens a new one; a readable one is opened as it is.
+ * `dev` opens a dev build's installation, kept apart from the release's.
+ */
 interface Addon {
-	openEngine(startFresh?: boolean): Promise<NativeEngine>;
+	openEngine(startFresh?: boolean, dev?: boolean): Promise<NativeEngine>;
 	openTemporaryEngine(capture?: boolean, screenGrant?: string): Promise<NativeEngine>;
 }
 
@@ -104,7 +108,7 @@ export class EngineHost implements IClientConnectionFilter {
 			if (!isAddon(addon)) {
 				throw new Error('Invalid addon');
 			}
-			this.engine = await (process.argv.includes('--temporary') ? addon.openTemporaryEngine(process.argv.includes('--capture'), screenGrantArgument(process.argv)) : addon.openEngine(process.argv.includes('--start-fresh')));
+			this.engine = await (process.argv.includes('--temporary') ? addon.openTemporaryEngine(process.argv.includes('--capture'), screenGrantArgument(process.argv)) : addon.openEngine(process.argv.includes('--start-fresh'), product.quality === 'dev'));
 			this.port.postMessage({ ready: true });
 		} catch (error) {
 			// Native error strings name the reason only, never secrets, so the main process can log it.

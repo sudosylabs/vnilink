@@ -24,6 +24,8 @@ interface PlatformMetadata {
 }
 
 export interface Product {
+	/** Present only on a dev build's resolved product; `product.json` itself is the release. */
+	readonly quality?: 'dev';
 	readonly nameShort: string;
 	readonly nameLong: string;
 	/** One sentence for package metadata. */
@@ -78,6 +80,7 @@ export function validateProduct(product: unknown): Product {
 	for (const field of ['nameShort', 'nameLong', 'description', 'publisherName']) {
 		requireValue(text(product[field]), `${field} is required`);
 	}
+	requireValue(product.quality === undefined || product.quality === 'dev', 'invalid quality');
 	requireValue(matches(product.applicationName, /^[a-z][a-z0-9-]*$/), 'invalid applicationName');
 	requireValue(matches(product.appId, /^[a-z][a-z0-9]*(\.[a-z][a-z0-9-]*){2,}$/), 'invalid appId');
 	requireValue(typeof product.repositoryUrl === 'string' && product.repositoryUrl.startsWith('https://github.com/'), 'expected an HTTPS repositoryUrl');
@@ -148,6 +151,7 @@ export function productForQuality(product: Product, quality: Quality): Product {
 	const { darwin, win32, linux } = product.platforms;
 	return {
 		...product,
+		quality,
 		nameShort: `${product.nameShort} Dev`,
 		nameLong: `${product.nameLong} Dev`,
 		applicationName: `${product.applicationName}-dev`,

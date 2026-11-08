@@ -13,10 +13,8 @@
 use zeroize::{Zeroize, Zeroizing};
 
 use super::crypto::{self, KEY_LEN};
-use super::StoreFailure;
+use super::{Quality, StoreFailure};
 
-/// Credential service for the installation key. Not the legacy record entry.
-pub(crate) const KEY_SERVICE: &str = "com.vnilink.storage";
 /// Credential account for the installation key.
 pub(crate) const KEY_ACCOUNT: &str = "installation-key";
 
@@ -38,9 +36,9 @@ pub(crate) struct KeyringVault {
 }
 
 impl KeyringVault {
-    pub(crate) fn production() -> Self {
+    pub(crate) fn production(quality: Quality) -> Self {
         Self {
-            service: KEY_SERVICE.to_owned(),
+            service: quality.key_service().to_owned(),
             account: KEY_ACCOUNT.to_owned(),
         }
     }

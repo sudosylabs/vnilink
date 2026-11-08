@@ -9,6 +9,8 @@ import metadata from '../../../../product.json' with { type: 'json' };
 
 /** Runtime identity is derived from the same metadata as packaged application resources. */
 export const product = Object.freeze({
+	/** `dev` for every build but the release, which the build resolves this metadata for. */
+	quality: (metadata as { readonly quality?: string }).quality === 'dev' ? 'dev' as const : 'stable' as const,
 	name: metadata.nameLong,
 	appId: metadata.appId,
 	/** The extension of invitation files, which installers associate with the application. */

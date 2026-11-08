@@ -38,6 +38,44 @@ mod paths;
 mod recover;
 
 use std::sync::atomic::{AtomicU8, Ordering};
+
+/// Which application's installation this is: the release, or a dev build
+/// beside it. Each keeps its own data folder and credential entry, so neither
+/// opens the other's installation nor asks for the other's keychain item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Quality {
+    Stable,
+    Dev,
+}
+
+impl Quality {
+    /// The application folder under the platform's data directory on macOS
+    /// and Windows, which macOS shares with Electron's userData.
+    #[cfg(any(not(target_os = "linux"), test))]
+    pub(crate) fn folder(self) -> &'static str {
+        match self {
+            Self::Stable => "VniLink",
+            Self::Dev => "VniLink Dev",
+        }
+    }
+
+    /// The application folder under `$XDG_DATA_HOME` on Linux.
+    #[cfg(any(target_os = "linux", all(test, unix)))]
+    pub(crate) fn linux_folder(self) -> &'static str {
+        match self {
+            Self::Stable => "vnilink",
+            Self::Dev => "vnilink-dev",
+        }
+    }
+
+    /// The credential service the installation key is kept under.
+    pub(crate) fn key_service(self) -> &'static str {
+        match self {
+            Self::Stable => "com.vnilink.storage",
+            Self::Dev => "com.vnilink.storage.dev",
+        }
+    }
+}
 use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::thread;
 use std::time::Instant;
@@ -135,9 +173,9 @@ impl EncryptedInstallationStore {
         self.paths.screenshot_grant.clone()
     }
 
-    pub fn open_production() -> Result<Self, FfiError> {
-        let paths = paths::production_paths()?;
-        open_at(paths, Arc::new(KeyringVault::production()), false).map_err(FfiError::from)
+    pub fn open_production(quality: Quality) -> Result<Self, FfiError> {
+        let paths = paths::production_paths(quality)?;
+        open_at(paths, Arc::new(KeyringVault::production(quality)), false).map_err(FfiError::from)
     }
 
     #[cfg(test)]
@@ -493,9 +531,9 @@ fn cfg_sync_failure(store: &EncryptedInstallationStore) -> bool {
 /// Sets this computer's installation aside, as [`recover::recover`] does,
 /// so the next open starts a new one. The application calls it only once the
 /// store refused the record as unreadable and its person chose to start fresh.
-pub(crate) fn start_fresh() -> Result<(), FfiError> {
-    let paths = paths::production_paths().map_err(FfiError::from)?;
-    let vault = KeyringVault::production();
+pub(crate) fn start_fresh(quality: Quality) -> Result<(), FfiError> {
+    let paths = paths::production_paths(quality).map_err(FfiError::from)?;
+    let vault = KeyringVault::production(quality);
     match recover::recover(&paths, &vault) {
         Ok(report) => {
             tracing::info!(
@@ -543,7 +581,13 @@ pub fn reset_installation_cli() -> i32 {
         eprintln!("pass --confirm-forget-installation to forget the installation");
         return 2;
     }
-    let paths = match paths::production_paths() {
+    // `--dev` forgets a dev build's installation; the release's otherwise.
+    let quality = if std::env::args().any(|arg| arg == "--dev") {
+        Quality::Dev
+    } else {
+        Quality::Stable
+    };
+    let paths = match paths::production_paths(quality) {
         Ok(paths) => paths,
         Err(_) => {
             eprintln!("the installation store is unavailable");
@@ -552,9 +596,9 @@ pub fn reset_installation_cli() -> i32 {
     };
     println!("installation directory: {}", paths.engine_dir.display());
     println!("database: {}", paths.database.display());
-    println!("credential service: {}", key::KEY_SERVICE);
+    println!("credential service: {}", quality.key_service());
     println!("credential account: {}", key::KEY_ACCOUNT);
-    let vault = KeyringVault::production();
+    let vault = KeyringVault::production(quality);
     match recover::recover(&paths, &vault) {
         Ok(report) => {
             println!("preserved {} file(s)", report.moved.len());

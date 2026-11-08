@@ -15,6 +15,7 @@ import type { EngineEvent } from '../../common/engine.js';
 import { ENGINE_HOST_CONNECTION, type EngineEventBatch } from '../../common/engineService.js';
 import type { NativeDataChannel } from '../../electron-utility/dataChannelHost.js';
 import { EngineHost } from '../../electron-utility/engineHost.js';
+import { product } from '../../../product/common/product.js';
 
 interface EngineCommand {
 	readonly type: string;
@@ -164,6 +165,18 @@ suite('EngineHost', () => {
 		test('an opened engine is reported ready to main', async () => {
 			await openHost();
 			assert.deepStrictEqual(posted, [{ ready: true }]);
+		});
+		test('the engine opens the installation of the application\'s own quality', async () => {
+			const opened: (boolean | undefined)[] = [];
+			const host = new EngineHost({ postMessage: message => posted.push(message) }, () => ({
+				openEngine: (_startFresh?: boolean, dev?: boolean) => {
+					opened.push(dev);
+					return Promise.resolve(native);
+				},
+				openTemporaryEngine: () => Promise.reject(new Error('unused')),
+			}));
+			await host.open();
+			assert.deepStrictEqual(opened, [product.quality === 'dev']);
 		});
 		test('an engine that fails to open tells main why, then exits', async () => {
 			const exits: number[] = [];
