@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { lstat, readFile, readdir, readlink } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import type { Quality } from './product.ts';
 import type { SigningKind } from './signing.ts';
 
 export interface ReleaseFile {
@@ -22,6 +23,7 @@ export interface ReleaseFile {
 export interface ReleaseManifest {
 	readonly source: string;
 	readonly product: string;
+	readonly quality: Quality;
 	readonly version: string;
 	readonly electronVersion: string;
 	readonly platform: NodeJS.Platform;
@@ -35,6 +37,7 @@ export type PackageFile = { readonly path: string; readonly type: 'link'; readon
 
 export interface PackageManifest {
 	readonly appId: string;
+	readonly quality: Quality;
 	readonly version: string;
 	readonly electronVersion: string;
 	readonly packagerVersion: string;

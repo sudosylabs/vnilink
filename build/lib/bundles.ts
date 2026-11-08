@@ -6,17 +6,20 @@
 // ---------------------------------------------------------------------------------------------
 
 /** The application's bundles and resources, shared by the one-shot, release and watch builds. */
-import { build, type BuildOptions } from 'esbuild';
+import { build, type BuildOptions, type Plugin } from 'esbuild';
 import { cp, mkdir, readFile, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
 import { acquireLock } from './lock.ts';
 import { compileNative, defaultNativeOptions, stageGlass, stageSpdlog, stageNative, type NativeIdentity, type NativeOptions } from './native.ts';
 import { ProcessRunner } from './processes.ts';
+import { productForQuality, validateProduct, type Quality } from './product.ts';
 import { define, execute, parallel, series } from './task.ts';
 
 export interface BundleOptions {
 	readonly production?: boolean;
 	readonly outputDirectory?: string;
+	/** The identity the application imports from `product.json`; `dev` unless the build is the release. */
+	readonly quality?: Quality;
 }
 
 export interface Resource {
@@ -24,8 +27,21 @@ export interface Resource {
 	readonly output: string;
 }
 
-export function bundleOptions(root: string, { production = false, outputDirectory = join(root, 'out') }: BundleOptions = {}): BuildOptions[] {
-	const common: BuildOptions = { absWorkingDir: root, tsconfig: join(root, 'tsconfig.json'), bundle: true, ...(production ? { minify: true, keepNames: true, define: { 'process.env.NODE_ENV': '"production"' } } : {}) };
+/** Serves the repository's `product.json` as the identity of a `quality` build to every module that imports it. */
+function productPlugin(root: string, quality: Quality): Plugin {
+	const path = join(root, 'product.json');
+	return {
+		name: 'product',
+		setup(build) {
+			build.onLoad({ filter: /[\\/]product\.json$/ }, async args => args.path === path
+				? { contents: JSON.stringify(productForQuality(validateProduct(JSON.parse(await readFile(path, 'utf8'))), quality)), loader: 'json' }
+				: undefined);
+		},
+	};
+}
+
+export function bundleOptions(root: string, { production = false, outputDirectory = join(root, 'out'), quality = 'dev' }: BundleOptions = {}): BuildOptions[] {
+	const common: BuildOptions = { absWorkingDir: root, tsconfig: join(root, 'tsconfig.json'), bundle: true, plugins: [productPlugin(root, quality)], ...(production ? { minify: true, keepNames: true, define: { 'process.env.NODE_ENV': '"production"' } } : {}) };
 	const node = (entry: string, output: string): BuildOptions => ({ ...common, entryPoints: [entry], outfile: join(outputDirectory, output), platform: 'node', format: 'cjs', target: 'node22', external: ['electron'] });
 	const browser = (entry: string, output: string, extra: BuildOptions = {}): BuildOptions => ({ ...common, entryPoints: [entry], outfile: join(outputDirectory, output), platform: 'browser', target: 'chrome144', loader: { '.svg': 'text' }, ...extra });
 	return [
@@ -132,7 +148,7 @@ export interface ApplicationBuildOptions extends BundleOptions {
  * the previous output whole; a lock keeps two builds from publishing at once.
  */
 export async function buildApplication(root: string, signal: AbortSignal, options: ApplicationBuildOptions = {}): Promise<void> {
-	const { production = false } = options;
+	const { production = false, quality = 'dev' } = options;
 	const published = options.outputDirectory ?? join(root, 'out');
 	const outputDirectory = join(dirname(published), `${basename(published)}.next`);
 	const native = options.native ?? defaultNativeOptions();
@@ -148,7 +164,7 @@ export async function buildApplication(root: string, signal: AbortSignal, option
 		}),
 		parallel(
 			define('typescript:bundle', async () => {
-				await Promise.all(bundleOptions(root, { production, outputDirectory }).map(value => build(value)));
+				await Promise.all(bundleOptions(root, { production, outputDirectory, quality }).map(value => build(value)));
 			}),
 			define('resources:stage', async () => {
 				const staged = resources(root, outputDirectory, { relink: production });

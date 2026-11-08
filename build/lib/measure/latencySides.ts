@@ -81,7 +81,7 @@ interface LatencyPlatform {
 export async function latencyPlatform(root: string, app: string | undefined, processes: ProcessRunner, signal: AbortSignal): Promise<LatencyPlatform> {
 	const entry = join(root, 'out/latency.cjs');
 	if (isMacintosh) {
-		// .../VniLink.app/Contents/MacOS/Electron
+		// .../VniLink Dev.app/Contents/MacOS/Electron
 		const bundle = app ?? dirname(dirname(dirname(await electronExecutable(root, signal))));
 		return {
 			readerCrate: 'vnilink-macos',

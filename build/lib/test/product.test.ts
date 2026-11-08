@@ -8,7 +8,7 @@
 import assert from 'assert';
 import { suite, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { loadProduct, validateProduct, type Product } from '../product.ts';
+import { buildQuality, loadProduct, productForQuality, validateProduct, type Product } from '../product.ts';
 
 const product = await loadProduct(fileURLToPath(new URL('../../../', import.meta.url)));
 
@@ -57,4 +57,24 @@ suite('product', () => {
 			assert.throws(() => validateProduct(candidate), /Invalid product metadata/);
 		});
 	}
+});
+
+suite('product quality', () => {
+	test('only the release workflow\'s setting makes a stable build', () => {
+		assert.strictEqual(buildQuality({}), 'dev');
+		assert.strictEqual(buildQuality({ VNILINK_QUALITY: 'dev' }), 'dev');
+		assert.strictEqual(buildQuality({ VNILINK_QUALITY: 'stable' }), 'stable');
+		assert.throws(() => buildQuality({ VNILINK_QUALITY: 'insider' }), /stable or dev/);
+	});
+	test('a stable build is the product itself', () => {
+		assert.strictEqual(productForQuality(product, 'stable'), product);
+	});
+	test('a dev build is another valid application beside the release', () => {
+		const dev = validateProduct(productForQuality(product, 'dev'));
+		assert.deepStrictEqual({ name: dev.nameLong, application: dev.applicationName, id: dev.appId }, { name: `${product.nameLong} Dev`, application: `${product.applicationName}-dev`, id: `${product.appId}.dev` });
+		assert.deepStrictEqual(
+			{ win32: dev.platforms.win32.executableName, linux: dev.platforms.linux.executableName, desktop: dev.platforms.linux.desktopFileName },
+			{ win32: `${win32.executableName}-dev`, linux: `${linux.executableName}-dev`, desktop: `${product.appId}.dev.desktop` },
+		);
+	});
 });

@@ -116,9 +116,62 @@ export function validateProduct(product: unknown): Product {
 	return product as unknown as Product;
 }
 
+/** Whether a build is the published release (`stable`) or anyone's own build (`dev`). */
+export type Quality = 'stable' | 'dev';
+
+/**
+ * The quality `VNILINK_QUALITY` names. Only the release workflow sets
+ * `stable`; `npm run dev`, a local package and CI's own packaging are `dev`.
+ */
+export function buildQuality(environment: NodeJS.ProcessEnv = process.env): Quality {
+	const value = environment.VNILINK_QUALITY;
+	if (value === undefined || value === '' || value === 'dev') {
+		return 'dev';
+	}
+	if (value === 'stable') {
+		return value;
+	}
+	throw new Error(`VNILINK_QUALITY must be stable or dev, not ${JSON.stringify(value)}`);
+}
+
+/**
+ * The identity a build of `quality` carries. A dev build is its own
+ * application: another name, application and executable names, and
+ * identifier, so the operating system keeps its permissions, keychain items,
+ * data and windows apart from an installed release.
+ */
+export function productForQuality(product: Product, quality: Quality): Product {
+	if (quality === 'stable') {
+		return product;
+	}
+	const appId = `${product.appId}.dev`;
+	const { darwin, win32, linux } = product.platforms;
+	return {
+		...product,
+		nameShort: `${product.nameShort} Dev`,
+		nameLong: `${product.nameLong} Dev`,
+		applicationName: `${product.applicationName}-dev`,
+		appId,
+		platforms: {
+			darwin,
+			win32: { ...win32, executableName: `${win32.executableName}-dev` },
+			linux: { ...linux, executableName: `${linux.executableName}-dev`, desktopFileName: `${appId}.desktop` },
+		},
+	};
+}
+
 /** Reads and validates `product.json`. */
 export async function readProduct(root: string): Promise<Product> {
 	return validateProduct(JSON.parse(await readFile(join(root, 'product.json'), 'utf8')));
+}
+
+/**
+ * The identity the staged release for this host carries, which `build:release`
+ * resolved for its quality: what packaging, installers and their checks read,
+ * so none of them can disagree with what was built.
+ */
+export async function readStagedProduct(root: string): Promise<Product> {
+	return validateProduct(JSON.parse(await readFile(join(root, '.build/release', `${process.platform}-${process.arch}`, 'app/product.json'), 'utf8')));
 }
 
 /** Reads and validates `product.json`, and checks that its artwork exists. */

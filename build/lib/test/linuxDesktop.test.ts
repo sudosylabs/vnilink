@@ -12,24 +12,30 @@ import { join } from 'node:path';
 import { suite, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { dataHome, developmentDesktopEntry, developmentDesktopPaths, writeDevelopmentDesktopEntry } from '../linuxDesktop.ts';
-import { readProduct } from '../product.ts';
+import { productForQuality, readProduct, type Product } from '../product.ts';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 
+/** The checkout runs as the dev product. */
+async function devProduct(): Promise<Product> {
+	return productForQuality(await readProduct(root), 'dev');
+}
+
 suite('linuxDesktop', () => {
-	test('names the id the source checkout runs as, for its window class and icon', async () => {
-		const product = await readProduct(root);
-		const lines = developmentDesktopEntry(product, '/work/vnilink').split('\n');
-		assert.ok(lines.includes(`StartupWMClass=${product.appId}.dev`), lines.join('\n'));
-		assert.ok(lines.includes(`Icon=${product.appId}.dev`), lines.join('\n'));
+	test('names the dev product, its window class and icon', async () => {
+		const stable = await readProduct(root);
+		const lines = developmentDesktopEntry(await devProduct(), '/work/vnilink').split('\n');
+		assert.ok(lines.includes(`Name=${stable.nameLong} Dev`), lines.join('\n'));
+		assert.ok(lines.includes(`StartupWMClass=${stable.appId}.dev`), lines.join('\n'));
+		assert.ok(lines.includes(`Icon=${stable.appId}.dev`), lines.join('\n'));
 		assert.ok(lines.includes('MimeType=application/x-vnilink-invitation;'), lines.join('\n'));
 	});
 	test('starts the development Electron with the checkout, quoting both', async () => {
-		const lines = developmentDesktopEntry(await readProduct(root), '/work/Vni "Link"').split('\n');
-		assert.ok(lines.includes(String.raw`Exec="/work/Vni \\"Link\\"/.build/electron/vnilink" "/work/Vni \\"Link\\"" %U`), lines.join('\n'));
+		const lines = developmentDesktopEntry(await devProduct(), '/work/Vni "Link"').split('\n');
+		assert.ok(lines.includes(String.raw`Exec="/work/Vni \\"Link\\"/.build/electron/vnilink-dev" "/work/Vni \\"Link\\"" %U`), lines.join('\n'));
 	});
 	test('refuses a checkout path with a line break', async () => {
-		const product = await readProduct(root);
+		const product = await devProduct();
 		assert.throws(() => developmentDesktopEntry(product, '/work/vni\nlink'), /cannot start/);
 	});
 	test('installs into the XDG data directory, or ~/.local/share without one', () => {
@@ -39,7 +45,7 @@ suite('linuxDesktop', () => {
 	test('writes the entry and its scalable icon, and removes both', async () => {
 		const home = await mkdtemp(join(tmpdir(), 'vnilink-desktop-'));
 		try {
-			const product = await readProduct(root);
+			const product = await devProduct();
 			const paths = developmentDesktopPaths(product, home);
 			assert.strictEqual(await writeDevelopmentDesktopEntry(root, home, false, AbortSignal.timeout(10_000)), paths.entry);
 			assert.strictEqual(await readFile(paths.entry, 'utf8'), developmentDesktopEntry(product, root));

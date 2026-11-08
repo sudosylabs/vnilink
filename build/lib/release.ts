@@ -13,7 +13,7 @@ import { buildApplication, bundleOptions, type ApplicationBuildOptions } from '.
 import { installerResources } from './installers.ts';
 import { acquireLock } from './lock.ts';
 import { assertNativeFresh, GLASS_DIRECTORY, type NativeOptions } from './native.ts';
-import { loadProduct } from './product.ts';
+import { buildQuality, loadProduct, productForQuality } from './product.ts';
 import { releaseInventory, type ReleaseFile } from './inventory.ts';
 import { isMacintosh } from './platform.ts';
 
@@ -44,7 +44,8 @@ interface PackageJson {
 
 /** Stages `.build/release/<platform>-<arch>` with its inventory; refuses to overlap another release build. */
 export async function buildRelease(root: string, signal: AbortSignal, options: ReleaseOptions = {}): Promise<string> {
-	const product = await loadProduct(root);
+	const quality = buildQuality();
+	const product = productForQuality(await loadProduct(root), quality);
 	// Compared by name: the comparison narrows process.platform to a key of product.platforms.
 	const platform = process.platform === 'darwin' || process.platform === 'win32' || process.platform === 'linux' ? product.platforms[process.platform] : undefined;
 	const target = platform?.targets.find(value => value.architecture === process.arch);
@@ -67,7 +68,7 @@ export async function buildRelease(root: string, signal: AbortSignal, options: R
 		const source = await sourceFingerprint(root);
 		const minimum = isMacintosh ? { minimumSystemVersion: product.platforms.darwin.minimumSystemVersion } : {};
 		const native: NativeOptions = { profile: 'release', target: target.rustTarget, ...minimum };
-		await (options.buildApplication ?? buildApplication)(root, signal, { production: true, outputDirectory: app, native });
+		await (options.buildApplication ?? buildApplication)(root, signal, { production: true, outputDirectory: app, native, quality });
 		signal.throwIfAborted();
 		const packageJson = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as PackageJson;
 		await writeFile(join(app, 'package.json'), JSON.stringify({ name: product.applicationName, productName: product.nameLong, version: packageJson.version, private: true, main: 'main.cjs', type: 'module', author: product.publisherName, description: product.description, homepage: product.repositoryUrl, desktopName: product.platforms.linux.desktopFileName, license: 'AGPL-3.0-only' }, null, 2) + '\n');
@@ -85,7 +86,7 @@ export async function buildRelease(root: string, signal: AbortSignal, options: R
 		}
 		const files = await releaseInventory(stage);
 		const paths = new Set(files.map(file => file.path));
-		const bundles = bundleOptions(root, { production: true, outputDirectory: app }).map(option => relative(stage, option.outfile ?? '').split('\\').join('/'));
+		const bundles = bundleOptions(root, { production: true, outputDirectory: app, quality }).map(option => relative(stage, option.outfile ?? '').split('\\').join('/'));
 		// macOS ships Liquid Glass with its licence; a missing file would silently fall back to vibrancy.
 		const glass = isMacintosh ? [`app/${GLASS_DIRECTORY}/index.cjs`, `app/${GLASS_DIRECTORY}/elg.node`, 'app/licenses/elg.txt'] : [];
 		for (const name of [...bundles, ...glass, 'app/renderer/renderer.css', 'app/renderer/index.html', 'app/renderer/notice.css', 'app/renderer/notice.html', 'app/assets/tray/idleTemplate.png', 'app/native/vnilink.node', 'app/native/build.json', 'app/licenses/native-codecs/native-codecs.txt', 'app/relink/source/Cargo.lock']) {
@@ -96,7 +97,7 @@ export async function buildRelease(root: string, signal: AbortSignal, options: R
 		if (paths.has('app/smoke.cjs') || paths.has('app/latency.cjs') || paths.has('app/browser-tests.js')) {
 			throw new Error('Test bundles must not be distributed');
 		}
-		await writeFile(join(stage, 'build-manifest.json'), JSON.stringify({ source, product: product.appId, version: packageJson.version, electronVersion: packageJson.devDependencies.electron, platform: process.platform, architecture: process.arch, rustTarget: target.rustTarget, profile: 'release', files }, null, 2) + '\n');
+		await writeFile(join(stage, 'build-manifest.json'), JSON.stringify({ source, product: product.appId, quality, version: packageJson.version, electronVersion: packageJson.devDependencies.electron, platform: process.platform, architecture: process.arch, rustTarget: target.rustTarget, profile: 'release', files }, null, 2) + '\n');
 		signal.throwIfAborted();
 		await rm(output, { recursive: true, force: true });
 		await rename(stage, output);

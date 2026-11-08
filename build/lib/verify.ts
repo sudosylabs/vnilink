@@ -16,7 +16,7 @@ import { packageInventory, verifyReleaseFiles } from './inventory.ts';
 import { checkDesktopIntegration } from './package.linux.ts';
 import { runPackagedApplication } from './packagedApplication.ts';
 import { ProcessRunner } from './processes.ts';
-import { readProduct, type Product } from './product.ts';
+import { readStagedProduct, type Product } from './product.ts';
 import { isLinux, isMacintosh } from './platform.ts';
 
 interface TemporaryEngine {
@@ -65,7 +65,7 @@ export async function verifyPackage(root: string, signal: AbortSignal): Promise<
 
 /** Verifies installer checksums and, on macOS, the mounted application payload and its launch. */
 export async function verifyInstallers(root: string, signal: AbortSignal): Promise<void> {
-	const product = await readProduct(root);
+	const product = await readStagedProduct(root);
 	const directory = join(root, 'dist/installers', `${process.platform}-${process.arch}`);
 	const manifest = await verifyInstallerFiles(directory, product);
 	if (isLinux) {

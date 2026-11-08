@@ -15,7 +15,7 @@ import { builderPlatformFlag, packageConfiguration, runElectronBuilder, verifyPa
 import * as win32 from './package.win32.ts';
 import { acquireLock } from './lock.ts';
 import { ProcessRunner } from './processes.ts';
-import { readProduct, type Product } from './product.ts';
+import { readStagedProduct, type Product } from './product.ts';
 import { fileSha256, verifyReleaseFiles, type InstallerArtifact, type InstallerManifest, type ReleaseManifest } from './inventory.ts';
 import { isMacintosh } from './platform.ts';
 import { macSigning, notarizeDiskImage, signingKinds, windowsSigning, windowsSigningEnvironment, type SigningKind } from './signing.ts';
@@ -70,7 +70,7 @@ export interface InstallerOptions {
 
 /** Generates `dist/installers/<platform>-<arch>` from the verified assembled application. */
 export async function buildInstallers(root: string, signal: AbortSignal, options: InstallerOptions = {}): Promise<string> {
-	const product = await readProduct(root);
+	const product = await readStagedProduct(root);
 	const target = `${process.platform}-${process.arch}`;
 	const stage = join(root, '.build/release', target);
 	const application = join(root, 'dist', target);

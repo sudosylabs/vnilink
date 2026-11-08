@@ -17,7 +17,7 @@ import { release, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assemblyEnvironment, packagedLayout, verifyPackageFiles } from './package.ts';
 import { ProcessRunner } from './processes.ts';
-import { readProduct } from './product.ts';
+import { readStagedProduct } from './product.ts';
 import { isMacintosh } from './platform.ts';
 
 /** What `--self-check` prints; see `SelfCheckResult` in the application. */
@@ -53,7 +53,7 @@ async function launch(executable: string, args: readonly string[], cwd: string, 
 
 /** Copies the application in `directory` to a temporary location and checks that it runs, and refuses what it must. */
 export async function runPackagedApplication(root: string, directory: string, signal: AbortSignal): Promise<void> {
-	const product = await readProduct(root);
+	const product = await readStagedProduct(root);
 	const manifest = await verifyPackageFiles(directory, product);
 	const work = await mkdtemp(join(tmpdir(), 'vnilink-package-check-'));
 	const artifacts = join(root, '.build/package-tests', `${String(Date.now())}-${String(process.pid)}`);
