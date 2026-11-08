@@ -13,7 +13,10 @@ use expect_test::expect;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use vnilink::{CoreEvent, Error, EventSubscription, ServiceKind, SessionInfo, SharingPolicyUpdate};
+use vnilink::{
+    CoreEvent, Error, EventSubscription, ServiceKind, SessionInfo, SessionPhase,
+    SharingPolicyUpdate,
+};
 use vnilink_testkit::events::{drain, next_picked};
 use vnilink_testkit::{assert_story, traced, Engine, Pair, TestResult, DEFAULT_WAIT};
 
@@ -245,6 +248,56 @@ fn an_approval_lasts_through_use_and_its_grace() -> TestResult {
     assert!(
         matches!(answer(&again), Err(Error::Declined)),
         "asked again"
+    );
+    Ok(())
+}
+
+/// The person at the host disconnecting a computer ends its approval: its
+/// services ending leave no grace, so connecting again asks again.
+#[test]
+fn a_computer_the_host_disconnects_asks_again() -> TestResult {
+    let trace = traced();
+    let pair = asking_pair()?;
+    let (host, controller) = (&pair.host, &pair.controller);
+    let connection = pair.connect_services();
+    let host_events = host.core.subscribe()?;
+    let asked = ask(controller, &connection, ServiceKind::Files);
+    host.core
+        .answer_admission_request(requested(&host_events), true)?;
+    answer(&asked)?;
+    let (_service, _pipe) = controller.open_files(&connection)?;
+    let hosted = host.core.hosted_sessions()?;
+    host.core.stop_hosted_peer(hosted[0].id)?;
+    vnilink_testkit::wait_for(
+        "the controller to see its connection end",
+        DEFAULT_WAIT,
+        || {
+            controller
+                .core
+                .controller_session(connection.id)
+                .ok()
+                .filter(|session| session.phase == SessionPhase::Closed)
+        },
+    );
+    let again = pair.connect_services();
+    let asked = ask(controller, &again, ServiceKind::Files);
+    host.core
+        .answer_admission_request(requested(&host_events), false)?;
+    assert!(
+        matches!(answer(&asked), Err(Error::Declined)),
+        "asked again"
+    );
+    assert_story(
+        expect![[r#"
+        host:
+          hosting: admission asked connection=1 request=1
+          hosting: admission answered accept=true request=1
+          hosting: service opened connection=1 kind=Some(Files) service=1
+          hosting: service released service=1
+          hosting: admission asked connection=2 request=2
+          hosting: admission answered accept=false request=2
+    "#]],
+        || trace.story(&["hosting"]),
     );
     Ok(())
 }

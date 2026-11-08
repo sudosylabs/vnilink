@@ -83,8 +83,10 @@ impl Core {
         self.stop_incoming()
     }
 
-    /// Ends one hosted peer. Other live peers, their services and their
-    /// capture consumers stay up. Hosting itself stays enabled.
+    /// Ends one hosted peer, as the person at this computer disconnects it:
+    /// its approval ends too, so it asks again before using anything. Other
+    /// live peers, their services and their capture consumers stay up.
+    /// Hosting itself stays enabled.
     pub fn stop_hosted_peer(&self, id: u64) -> Result<(), Error> {
         let _engine = self.engine();
         let stop = {
@@ -94,7 +96,9 @@ impl Core {
                 return Err(Error::NoSession);
             }
             session.enter(SessionPhase::Stopping);
-            session.stop.clone()
+            let (stop, peer) = (session.stop.clone(), session.peer_id.clone());
+            super::admission::dismiss(&self.shared, &mut state, &peer);
+            stop
         };
         crate::ignored!(
             crate::trace::SESSION,
