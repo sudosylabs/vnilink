@@ -8,6 +8,7 @@ use objc2_core_audio::{
     kAudioHardwareNoError, kAudioHardwarePropertyDefaultInputDevice,
     kAudioHardwarePropertyDefaultOutputDevice, kAudioHardwarePropertyDevices,
     kAudioObjectPropertyElementMain, kAudioObjectPropertyScopeGlobal, kAudioObjectSystemObject,
+    kAudioObjectUnknown,
     AudioDeviceID, AudioObjectGetPropertyData, AudioObjectGetPropertyDataSize, AudioObjectID,
     AudioObjectPropertyAddress,
 };
@@ -99,7 +100,9 @@ pub fn default_input_device() -> Option<Device> {
             NonNull::from(&mut audio_device_id).cast(),
         )
     };
-    if status != kAudioHardwareNoError {
+    // With no device of this direction, CoreAudio succeeds and reports
+    // `kAudioObjectUnknown`, which is not a device.
+    if status != kAudioHardwareNoError || audio_device_id == kAudioObjectUnknown {
         return None;
     }
 
@@ -129,7 +132,9 @@ pub fn default_output_device() -> Option<Device> {
             NonNull::from(&mut audio_device_id).cast(),
         )
     };
-    if status != kAudioHardwareNoError {
+    // With no device of this direction, CoreAudio succeeds and reports
+    // `kAudioObjectUnknown`, which is not a device.
+    if status != kAudioHardwareNoError || audio_device_id == kAudioObjectUnknown {
         return None;
     }
 

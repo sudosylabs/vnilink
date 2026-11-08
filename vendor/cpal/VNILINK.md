@@ -21,3 +21,9 @@ upstream release provides equivalent cancellation. This vendor package has an
 isolated workspace to avoid running upstream device-opening examples/tests.
 
 The PulseAudio host exposes `default_loopback_device`, resolving the monitor of the current default sink by the server-provided sink index. VniLink uses it for the System default audio source; enumeration neither activates capture nor requests consent.
+
+On macOS, CoreAudio answers the default input or output query successfully
+with `kAudioObjectUnknown` when no such device is visible to the process (no
+microphone attached, or microphone access refused). `default_input_device` and
+`default_output_device` return `None` for it rather than a device whose every
+property query fails.

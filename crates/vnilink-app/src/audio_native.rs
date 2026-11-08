@@ -157,7 +157,21 @@ fn available_sources() -> Result<Vec<AudioDevice>, vnilink::Error> {
         (AudioKind::Microphone, DEFAULT_MICROPHONE),
         (AudioKind::System, DEFAULT_SYSTEM),
     ] {
-        if let Some(device) = default_source(kind, &sources)? {
+        // One kind's unresolvable default leaves that kind without its alias;
+        // the other kind and every physical source are still listed.
+        let device = match default_source(kind, &sources) {
+            Ok(device) => device,
+            Err(error) => {
+                tracing::debug!(
+                    target: vnilink::trace::AUDIO,
+                    failure = vnilink::trace::Failure::failure_name(&error),
+                    reason = vnilink::trace::Failure::failure_reason(&error),
+                    "the system default audio source could not be resolved"
+                );
+                None
+            }
+        };
+        if let Some(device) = device {
             sources.push(AudioDevice {
                 id: alias.into(),
                 name: format!("System default ({})", device.name),
