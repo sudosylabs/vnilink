@@ -20,6 +20,33 @@ use vnilink_testkit::{holds, traced, wait_for, Engine, TestResult};
 
 use super::support::{check, exchange, Answer, Approval, Asking, ASKING, FILE_LIFETIME};
 
+/// A later export ends the earlier file's unanswered request.
+#[test]
+fn replacing_an_invitation_cancels_its_pending_request() -> TestResult {
+    let _trace = traced();
+    let host = Engine::start("host");
+    let controller = Engine::start("controller");
+    host.core.start_hosting()?;
+    exchange(&host.core, &controller.core, true)?;
+    let events = controller.core.subscribe()?;
+    controller.core.begin_connect_services(&host.endpoint())?;
+    wait_request(&host.core, ASKING);
+    let shown = wait_control_check(&events, ASKING);
+    host.core.export_pairing_file(FILE_LIFETIME, true)?;
+    assert!(
+        matches!(
+            host.core.confirm_control_request(&shown),
+            Err(Error::NoControlRequest)
+        ),
+        "replacing the invitation ends the earlier request"
+    );
+    assert!(
+        host.core.snapshot()?.devices.is_empty(),
+        "the replaced request remembered no peer"
+    );
+    Ok(())
+}
+
 /// The controller keeps waiting while the host's owner reads the digits,
 /// longer than an ordinary frame read takes, and its link comes up once
 /// approved.

@@ -69,9 +69,6 @@ pub(super) struct Admission {
     next_request: u64,
     /// Peers this computer, as a controller, waits on, with how many asks.
     waiting: HashMap<String, usize>,
-    /// Peers the person at this computer disconnected: their services
-    /// ending starts no grace, until the person accepts them again.
-    dismissed: HashSet<String>,
     answer_wait: Duration,
     grace: Duration,
 }
@@ -91,7 +88,6 @@ impl Default for Admission {
             requests: HashMap::new(),
             next_request: 1,
             waiting: HashMap::new(),
-            dismissed: HashSet::new(),
             answer_wait: ANSWER_WAIT,
             grace: GRACE,
         }
@@ -113,38 +109,25 @@ pub(super) fn approved(state: &State, endpoint_id: &str, now: Instant) -> bool {
             .admission
             .approvals
             .get(endpoint_id)
-            .is_some_and(|until| *until > now)
-        || state
-            .hosted_services
-            .values()
-            .any(|record| record.info.peer_id == endpoint_id && !record.info.phase.finished())
+            .is_some_and(|until| {
+                *until > now
+                    || state.hosted_services.values().any(|record| {
+                        record.info.peer_id == endpoint_id && !record.info.phase.finished()
+                    })
+            })
 }
 
 /// Starts the grace of `endpoint_id`'s approval again: one of its hosted
 /// services ended. Its other services keep it approved meanwhile.
 pub(super) fn service_ended(state: &mut State, endpoint_id: &str, now: Instant) {
-    if state.admission.dismissed.contains(endpoint_id) {
-        return;
+    if let Some(until) = state.admission.approvals.get_mut(endpoint_id) {
+        *until = now + state.admission.grace;
     }
-    let until = now + state.admission.grace;
-    state
-        .admission
-        .approvals
-        .insert(endpoint_id.to_owned(), until);
-}
-
-/// Ends `endpoint_id`'s approval and request, and keeps its services
-/// ending from approving it again: the person at this computer
-/// disconnected it, so its next use asks.
-pub(super) fn dismiss(shared: &Shared, state: &mut State, endpoint_id: &str) {
-    forget(shared, state, endpoint_id);
-    state.admission.dismissed.insert(endpoint_id.to_owned());
 }
 
 /// Ends `endpoint_id`'s approval and request: the device was forgotten.
 pub(super) fn forget(shared: &Shared, state: &mut State, endpoint_id: &str) {
     state.admission.approvals.remove(endpoint_id);
-    state.admission.dismissed.remove(endpoint_id);
     let ended: Vec<u64> = state
         .admission
         .requests
@@ -207,7 +190,6 @@ impl Core {
         );
         if accept {
             let until = Instant::now() + state.admission.grace;
-            state.admission.dismissed.remove(&endpoint_id);
             state.admission.approvals.insert(endpoint_id, until);
         }
         end_request(&self.shared, &mut state, id, Some(accept));

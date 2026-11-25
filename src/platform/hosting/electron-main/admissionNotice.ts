@@ -27,6 +27,7 @@ const allowButton = 1;
 export class AdmissionNotices extends Disposable {
 	private readonly open = new Map<string, AbortController>();
 	private closed = false;
+	private generation = 0;
 
 	constructor(
 		private readonly engine: NoticeEngine,
@@ -50,6 +51,8 @@ export class AdmissionNotices extends Disposable {
 		this._register(engine.onDidChangeAvailability(available => {
 			if (available) {
 				void this.resync();
+			} else {
+				this.dismissAll();
 			}
 		}));
 		this._register({
@@ -65,6 +68,11 @@ export class AdmissionNotices extends Disposable {
 	/** Closes every open notice, unanswered, and shows no more; the engine declines them at their deadline. */
 	public close(): void {
 		this.closed = true;
+		this.dismissAll();
+	}
+
+	private dismissAll(): void {
+		this.generation++;
 		for (const controller of this.open.values()) {
 			controller.abort();
 		}
@@ -73,9 +81,10 @@ export class AdmissionNotices extends Disposable {
 
 	/** Shows any request already waiting, such as one that arrived while events lapsed. */
 	private async resync(): Promise<void> {
+		const generation = this.generation;
 		try {
 			const reply = await this.engine.execute({ type: 'admissionRequests' });
-			if (reply.type === 'admissionRequests') {
+			if (generation === this.generation && reply.type === 'admissionRequests') {
 				for (const request of reply.requests) {
 					void this.show(request.id, request.endpoint_id, request.remainingMs);
 				}
@@ -86,7 +95,7 @@ export class AdmissionNotices extends Disposable {
 	}
 
 	private async show(id: string, endpointId: string, remainingMs: number): Promise<void> {
-		if (this.closed || this.open.has(id)) {
+		if (this.closed || !this.engine.available || this.open.has(id)) {
 			return;
 		}
 		const controller = new AbortController();
