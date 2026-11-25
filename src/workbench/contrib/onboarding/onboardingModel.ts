@@ -11,7 +11,7 @@ import type { PermissionKind } from '../../../platform/permissions/common/permis
 export type OnboardingRole = 'control' | 'reachable' | 'both';
 
 /** The services a reachable computer may share, by setting, in the order the step lists them. */
-export const sharingSettings = ['sharing.screen', 'sharing.files', 'sharing.clipboard', 'sharing.terminal', 'sharing.camera', 'sharing.microphone', 'sharing.systemAudio'] as const;
+export const sharingSettings = ['sharing.screen', 'sharing.files', 'sharing.terminal', 'sharing.camera', 'sharing.microphone', 'sharing.systemAudio'] as const;
 
 export type SharingSetting = typeof sharingSettings[number];
 
