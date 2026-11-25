@@ -7,7 +7,7 @@
 
 import assert from 'assert';
 import '../../../../media/workbench.css';
-import { timeout } from '../../../../../base/common/async.js';
+import { DeferredPromise, timeout } from '../../../../../base/common/async.js';
 import { animationFrames, until } from '../../../../../base/test/browser/waits.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { runWithFakedTimers } from '../../../../../base/test/common/virtualScheduling/index.js';
@@ -83,6 +83,35 @@ suite('FilesView', () => {
 		await until(() => !copyButton.disabled, 'Selecting did not offer copy');
 		assert.strictEqual(copyButton.getAttribute('aria-label'), 'Copy 2 to Downloads on Studio PC');
 		assert.deepStrictEqual([local.classList.contains('active'), remote.classList.contains('active')], [true, false]);
+	});
+	test('a refused submission shows the reason even when it created no transfer', async () => {
+		const { view, local, remote } = await fixture.open();
+		await fixture.openRemoteDownloads(remote);
+		fixture.session.copy = () => Promise.reject(new Error('Busy: too many transfers at once'));
+		fixture.selectTwoHere(local);
+		click(view.element.querySelector('.files-copy-button'));
+		await until(() => local.querySelector('.files-notice')?.textContent.includes('transfer list is full') === true, 'The refused copy had no notice');
+	});
+	test('watching the old folder does not supersede opening a new folder', async () => {
+		const { remote } = await fixture.open();
+		await fixture.openRemoteDownloads(remote);
+		const gate = new DeferredPromise<void>();
+		const started = new DeferredPromise<void>();
+		const original = fixture.remoteDisk.list.bind(fixture.remoteDisk);
+		fixture.remoteDisk.list = async folder => {
+			if (folder.path.endsWith('/Installers')) {
+				await started.complete();
+				await gate.p;
+			}
+			return original(folder);
+		};
+		list(remote).focus();
+		press(list(remote), 'Home', 36);
+		press(list(remote), 'Enter', 13);
+		await started.p;
+		fixture.remoteDisk.watchers.get('2:Users/someone/Downloads')?.();
+		await gate.complete();
+		await until(() => crumbs(remote).at(-1) === 'Installers', 'A watch superseded navigation');
 	});
 	suite('a copy', () => {
 		let view: FilesView;
