@@ -55,6 +55,7 @@ export class SessionRecording extends Disposable {
 	private id: string | undefined;
 	private stoppingId: string | undefined;
 	private length = 0;
+	private pendingStart = false;
 
 	constructor(
 		private readonly start: RecordingStarter,
@@ -63,10 +64,14 @@ export class SessionRecording extends Disposable {
 		super();
 		this._register(toDisposable(() => {
 			this.poll.clear();
-			if (this.id) {
+			if (this.id && !this.stoppingId) {
 				void this.finish(this.id, true);
 			}
 		}));
+	}
+
+	public get starting(): boolean {
+		return this.pendingStart;
 	}
 
 	public get recording(): boolean {
@@ -84,10 +89,24 @@ export class SessionRecording extends Disposable {
 
 	/** Starts a recording, or stops the running one; says why one didn't start. */
 	public async toggle(): Promise<RecordingStartFailure | undefined> {
+		if (this._store.isDisposed || this.pendingStart) {
+			return undefined;
+		}
 		if (this.id) {
 			await this.finish(this.id, false);
 			return undefined;
 		}
+		this.pendingStart = true;
+		this.changed.fire();
+		try {
+			return await this.startRecording();
+		} finally {
+			this.pendingStart = false;
+			this.changed.fire();
+		}
+	}
+
+	private async startRecording(): Promise<RecordingStartFailure | undefined> {
 		const result = await this.start();
 		if (this._store.isDisposed) {
 			if ('recording' in result) {
@@ -109,6 +128,9 @@ export class SessionRecording extends Disposable {
 	private follow(id: string): void {
 		const interval = setInterval(() => {
 			void this.nativeRuntime.recordingStatus(id).then(status => {
+				if (this.stoppingId === id || this._store.isDisposed) {
+					return;
+				}
 				if (status.phase === 'Finished' || status.phase === 'Failed') {
 					this.end(id, status);
 				} else if (this.id === id) {
@@ -116,7 +138,9 @@ export class SessionRecording extends Disposable {
 					this.changed.fire();
 				}
 			}, () => {
-				this.end(id, undefined);
+				if (this.stoppingId !== id && !this._store.isDisposed) {
+					this.end(id, undefined);
+				}
 			});
 		}, recordingPoll);
 		this.poll.value = toDisposable(() => {
@@ -142,22 +166,23 @@ export class SessionRecording extends Disposable {
 			if (this.stoppingId === id) {
 				return;
 			}
+			this.poll.clear();
 			this.stoppingId = id;
 			this.changed.fire();
 		}
 		try {
 			let status = await this.nativeRuntime.stopRecording(id);
-			for (let wait = 0; wait < 100 && status.phase !== 'Finished' && status.phase !== 'Failed'; wait++) {
+			while (status.phase !== 'Finished' && status.phase !== 'Failed') {
 				await new Promise(resolve => setTimeout(resolve, 100));
 				status = await this.nativeRuntime.recordingStatus(id);
 			}
-			if (detached) {
+			if (detached || this._store.isDisposed) {
 				await this.nativeRuntime.releaseRecording(id);
 			} else {
 				this.end(id, status);
 			}
 		} catch {
-			if (!detached) {
+			if (!detached && !this._store.isDisposed) {
 				this.end(id, undefined);
 			}
 		}

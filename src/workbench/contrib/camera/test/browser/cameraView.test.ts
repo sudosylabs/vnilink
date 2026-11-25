@@ -119,6 +119,7 @@ class CameraFixture extends Disposable {
 	public readonly streams: TestCameraStream[] = [];
 	public readonly recordings: string[] = [];
 	public recording: RecordingStatus = recordingStatus;
+	public finishOnStop = true;
 	public readonly released: string[] = [];
 	public readonly saved: { name: string; png: VSBuffer }[] = [];
 	private readonly didSave = this._register(new Emitter<void>());
@@ -151,7 +152,9 @@ class CameraFixture extends Disposable {
 		this.instantiationService.stub(INativeRuntimeService, {
 			recordingStatus: () => Promise.resolve(this.recording),
 			stopRecording: () => {
-				this.recording = { ...this.recording, phase: 'Finished' };
+				if (this.finishOnStop) {
+					this.recording = { ...this.recording, phase: 'Finished' };
+				}
 				return Promise.resolve(this.recording);
 			},
 			releaseRecording: (id: string) => {
@@ -354,6 +357,30 @@ suite('CameraView', () => {
 			assert.strictEqual(record.getAttribute('aria-label'), 'Stop Recording');
 			click(record);
 			await timeout(0);
+		}));
+		test('two quick presses start one recording', () => runWithFakedTimers({}, async () => {
+			const view = await fixture.play();
+			const record = control(view, 'camera-record');
+			click(record);
+			assert.strictEqual(record.disabled, true);
+			click(record);
+			await timeout(0);
+			assert.deepStrictEqual(fixture.recordings, [device.id]);
+			click(record);
+			await timeout(0);
+			assert.deepStrictEqual(fixture.released, ['1']);
+		}));
+		test('a slow file is confirmed and released only once finished', () => runWithFakedTimers({ maxTaskCount: 1000 }, async () => {
+			const { view, record, badge } = await startRecording();
+			fixture.finishOnStop = false;
+			click(record);
+			await timeout(11000);
+			assert.strictEqual(badge.hidden, false);
+			assert.deepStrictEqual(fixture.released, []);
+			fixture.recording = { ...recordingStatus, phase: 'Finished' };
+			await timeout(100);
+			assert.strictEqual(notice(view), 'Recording saved to the recordings folder.');
+			assert.deepStrictEqual(fixture.released, ['1']);
 		}));
 		test('the recording time follows the recording', () => runWithFakedTimers({}, async () => {
 			const { record, badge } = await startRecording();

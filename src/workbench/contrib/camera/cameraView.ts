@@ -372,7 +372,7 @@ export class CameraView extends Disposable implements WorkbenchTab {
 	private updateControls(): void {
 		this.shutter.disabled = !this.playing;
 		const recording = this.recording.recording;
-		this.record.disabled = this.recording.stopping || (!recording && (!this.playing || !this.recordingAllowed));
+		this.record.disabled = this.recording.starting || this.recording.stopping || (!recording && (!this.playing || !this.recordingAllowed));
 		describe(this.record, recording
 			? nls.localize('camera.stopRecording', 'Stop Recording')
 			: this.playing && !this.recordingAllowed
