@@ -222,11 +222,16 @@ export async function detectHost(root: string, manifest: Manifest, probe: Probe 
 		root, platform: process.platform, architecture: process.arch, nodeVersion: process.versions.node, env: process.env, uid: process.getuid?.(),
 	};
 	if (process.platform === 'darwin') {
-		// Rosetta hides the processor from Node; the kernel still reports it.
-		// By path: a user's PATH may leave out sbin, and a failed query would read as Intel.
-		const arm64 = (await probe.run('/usr/sbin/sysctl', ['-n', 'hw.optional.arm64'])).stdout.trim() === '1';
+		// Native arm64 Node identifies Apple silicon. An x64 Node may be
+		// running under Rosetta, so only a successful kernel probe identifies Intel.
+		let hardwareArchitecture = 'arm64';
+		if (process.arch !== 'arm64') {
+			const cpu = await probe.run('/usr/sbin/sysctl', ['-n', 'hw.optional.arm64']);
+			const value = cpu.ok ? cpu.stdout.trim() : '';
+			hardwareArchitecture = value === '1' ? 'arm64' : value === '0' ? 'x64' : 'unknown';
+		}
 		const version = (await probe.run('/usr/bin/sw_vers', ['-productVersion'])).stdout.trim();
-		return { ...base, hardwareArchitecture: arm64 ? 'arm64' : 'x64', osName: `macOS ${version}` };
+		return { ...base, hardwareArchitecture, osName: `macOS ${version}` };
 	}
 	if (process.platform === 'linux') {
 		const text = await probe.readFile('/etc/os-release') ?? '';
@@ -469,6 +474,9 @@ const customChecks: Readonly<Record<string, CustomCheck>> = {
 		if (!entry) {
 			return Promise.resolve({ status: 'unsupported', detail: `${host.platform} is not supported` });
 		}
+		if (host.hardwareArchitecture === 'unknown') {
+			return Promise.resolve({ status: 'missing', detail: 'The hardware architecture could not be read', fix: ['Allow the hardware probe and run this check again.'] });
+		}
 		const architecture = Object.hasOwn(entry.architectures, host.hardwareArchitecture) ? entry.architectures[host.hardwareArchitecture] : undefined;
 		const name = `${host.osName} ${host.hardwareArchitecture}`;
 		if (!architecture || architecture.status === 'unsupported') {
@@ -494,6 +502,9 @@ const customChecks: Readonly<Record<string, CustomCheck>> = {
 		if (!nodeVersionAccepted(host.nodeVersion, required)) {
 			const major = nodeRequirement(required)?.[0] ?? '?';
 			return { status: 'missing', detail: `Node ${host.nodeVersion}; needs ${required} or a later ${String(major)}.x (${manifest.node.versionFile})`, fix: [manifest.node.install] };
+		}
+		if (host.hardwareArchitecture === 'unknown') {
+			return { status: 'missing', detail: 'The hardware architecture could not be read', fix: ['Allow the hardware probe and run this check again.'] };
 		}
 		if (host.architecture !== host.hardwareArchitecture) {
 			return { status: 'missing', detail: `Node is ${host.architecture} on an ${host.hardwareArchitecture} computer`, fix: [`Install the ${host.hardwareArchitecture} build of Node ${required}.`] };

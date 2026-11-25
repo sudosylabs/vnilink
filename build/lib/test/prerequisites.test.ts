@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { formatDoctor } from '../doctor.ts';
 import { productForQuality, readProduct } from '../product.ts';
 import {
-	assertTaskReady, checkRequirement, checkTasks, distributionOf, firstBuildDownloads, fixLines, installCommand, latencyPortalGrants, linuxSandbox,
+	assertTaskReady, checkRequirement, checkTasks, detectHost, distributionOf, firstBuildDownloads, fixLines, installCommand, latencyPortalGrants, linuxSandbox,
 	linuxSandboxProfile, loadManifest, rustChannel, systemPackages, taskRequirements, type CheckResult, type Host, type Platform, type Probe, type TaskReport,
 } from '../prerequisites.ts';
 
@@ -527,6 +527,10 @@ suite('prerequisites', () => {
 			assert.ok(error instanceof Error);
 			return error.message;
 		};
+		test('a denied hardware probe cannot misidentify native arm64 Node on macOS', { skip: process.platform !== 'darwin' || process.arch !== 'arm64' }, async () => {
+			const detected = await detectHost(root, manifest, fakeProbe());
+			assert.strictEqual(detected.hardwareArchitecture, 'arm64');
+		});
 		test('a task whose requirements are met runs', async () => {
 			await assertTaskReady(root, 'format', pinning(process.versions.node));
 		});

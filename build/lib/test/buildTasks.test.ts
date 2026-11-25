@@ -189,6 +189,9 @@ suite('build tasks', () => {
 			await runner.stop();
 			assert.throws(() => runner.start(process.execPath, []), /closed/);
 		});
+		test('a signal aborted before construction cannot launch a worker', () => {
+			assert.throws(() => new ProcessRunner(AbortSignal.abort()), { name: 'AbortError' });
+		});
 		test('an aborted signal stops the processes a runner owns', async () => {
 			const controller = new AbortController();
 			const owned = new ProcessRunner(controller.signal);
