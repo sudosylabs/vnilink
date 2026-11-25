@@ -41,7 +41,7 @@ One signed `.vnl` file introduces two computers. Iroh carries the authenticated 
 
 ## Files
 
-- Files shares a whole disk or nothing: `Core::enable_filesystem_access` shares `/` or every drive, and each operation also needs `Grant::Transfer` (`SharingPolicy.files`). Withdrawing it closes hosted Files services and interrupts their jobs.
+- Files shares a whole disk or nothing: `Core::enable_filesystem_access` shares `/` or every drive, and remote access to it needs `Grant::Transfer` (`SharingPolicy.files`). A controller can send the files it selected or receive a download through its active Files service with its own disk sharing turned off. Withdrawing it closes hosted Files services and interrupts their jobs.
 - Each peer request is fenced against the session generation and the grant under the same lock as the change (`serve_aux_host`, `dispatch_aux_host` in `core/fs.rs`), and `jobs::rename_blocked_with` refuses changes to entries an active job uses.
 - A listing carries `fs::EntryToken`s. A token guards a change against a stale listing, not against the peer: sharing alone decides what a peer may change. On most volumes it is the object's identity. On volumes whose ids are entry positions (FAT, exFAT, some network shares) it is a fingerprint; a file may then be renamed or deleted while its fingerprint still matches, and anything without a proven fingerprint, including every folder delete, is refused as `Error::UnprovenEntry`.
 - All movement goes through jobs. `Core::start_job_driver` runs one worker per drivable job; transient failures retry up to `MAX_RETRIES` within `RETRY_WINDOW` and then interrupt the job; `load_jobs` makes in-flight jobs `Interrupted` on start. Jobs persist as per-job journals (`job_journal`).

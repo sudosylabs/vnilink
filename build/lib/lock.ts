@@ -5,7 +5,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // ---------------------------------------------------------------------------------------------
 
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, readdir, readFile, rename, rm, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /** Whether a process with `pid` still runs on this computer. */
@@ -19,29 +20,61 @@ function running(pid: number): boolean {
 	}
 }
 
-/**
- * Takes the lock directory `path` for this process, so two builds never
- * publish over each other. A lock whose process is gone, as after a crash
- * or a killed build, is taken over; one held by a running build is refused,
- * naming it. The returned function releases the lock.
- */
-export async function acquireLock(path: string): Promise<() => Promise<void>> {
-	for (let attempt = 0; attempt < 2; attempt++) {
-		try {
-			await mkdir(path);
-			await writeFile(join(path, 'owner.json'), `${JSON.stringify({ pid: process.pid })}\n`);
-			return () => rm(path, { recursive: true, force: true });
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-				throw error;
-			}
-			const owner = await readFile(join(path, 'owner.json'), 'utf8').then(text => (JSON.parse(text) as { pid?: unknown }).pid, () => undefined);
-			if (typeof owner === 'number' && running(owner)) {
-				throw new Error(`Another build (process ${String(owner)}) is publishing here; wait for it, or stop it and run again (${path})`);
-			}
-			// Its owner is gone, or it is too old to name one: a build that stopped without releasing it.
-			await rm(path, { recursive: true, force: true });
+/** Leaves a newly acquired lock in place when its predecessor finishes cleaning up. */
+async function removeEmpty(path: string): Promise<void> {
+	try {
+		await rmdir(path);
+	} catch (error) {
+		if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+			throw error;
 		}
 	}
-	throw new Error(`The lock ${path} could not be taken`);
+}
+
+/** Publishes a populated directory atomically. Each holder removes only its own file. */
+export async function acquireLock(path: string): Promise<() => Promise<void>> {
+	const stage = await mkdtemp(path + '-');
+	const name = `owner-${randomUUID()}.json`;
+	try {
+		await writeFile(join(stage, name), JSON.stringify({ pid: process.pid }));
+		for (let attempt = 0; ; attempt++) {
+			try {
+				await rename(stage, path);
+				break;
+			} catch (error) {
+				if (attempt >= 8 || !['ENOTEMPTY', 'EEXIST', 'EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+					throw error;
+				}
+				const entries = await readdir(path).catch((readError: unknown) => {
+					if ((readError as NodeJS.ErrnoException).code !== 'ENOENT') {
+						throw readError;
+					}
+					return [];
+				});
+				for (const entry of entries) {
+					if (entry !== 'owner.json' && !/^owner-[a-f0-9-]+\.json$/.test(entry)) {
+						throw new Error(`Unrecognized build lock at ${path}`);
+					}
+					try {
+						const owner = JSON.parse(await readFile(join(path, entry), 'utf8')) as { pid: number };
+						if (running(owner.pid)) {
+							throw new Error(`Another build (process ${String(owner.pid)}) is publishing here; wait for it, or stop it and run again (${path})`);
+						}
+						await unlink(join(path, entry));
+					} catch (readError) {
+						if ((readError as NodeJS.ErrnoException).code !== 'ENOENT') {
+							throw readError;
+						}
+					}
+				}
+				await removeEmpty(path);
+			}
+		}
+	} finally {
+		await rm(stage, { recursive: true, force: true });
+	}
+	return async () => {
+		await unlink(join(path, name));
+		await removeEmpty(path);
+	};
 }

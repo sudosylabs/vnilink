@@ -127,6 +127,7 @@ impl Core {
         let check =
             crate::pairing::file_digits(&invitation.endpoint_id, &nonce, invitation.expires_at_ms);
         let mut state = self.alive_state()?;
+        state.control_request = None;
         state.pairing_window = Some(PairingWindow::new(invitation.expires_at_ms, allow_control));
         tracing::info!(
             target: crate::trace::PAIRING,

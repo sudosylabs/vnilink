@@ -399,6 +399,7 @@ export class FilesPaneView extends Disposable {
 	private readonly back: FolderLocation[] = [];
 	private readonly forward: FolderLocation[] = [];
 	private revision = 0;
+	private pendingNavigation: number | undefined;
 	private sort: SortColumn = 'name';
 	private descending = false;
 	private filter = '';
@@ -687,18 +688,21 @@ export class FilesPaneView extends Disposable {
 	}
 
 	public async refresh(): Promise<void> {
-		if (this.current) {
-			await this.navigate(this.current, false);
+		if (this.current && this.pendingNavigation === undefined) {
+			await this.navigate(this.current, false, true);
 		}
 	}
 
 	/** Lists `folder`; only the newest navigation paints. Resolves whether it opened. */
-	public async navigate(folder: FolderLocation, record = true): Promise<boolean> {
+	public async navigate(folder: FolderLocation, record = true, refreshing = false): Promise<boolean> {
 		const disk = this.disk;
 		if (!disk) {
 			return false;
 		}
 		const revision = ++this.revision;
+		if (!refreshing) {
+			this.pendingNavigation = revision;
+		}
 		const slow = setTimeout(() => {
 			if (revision === this.revision) {
 				this.showState(nls.localize('files.readingFolder', 'Reading {0}…', folderName(folder, this.places, this.computer)), '');
@@ -743,6 +747,9 @@ export class FilesPaneView extends Disposable {
 			return false;
 		} finally {
 			clearTimeout(slow);
+			if (this.pendingNavigation === revision) {
+				this.pendingNavigation = undefined;
+			}
 		}
 	}
 

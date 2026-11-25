@@ -41,6 +41,7 @@ export class ProcessRunner {
 
 	/** Stops every process when `signal` aborts. */
 	constructor(signal?: AbortSignal) {
+		signal?.throwIfAborted();
 		signal?.addEventListener('abort', () => {
 			void this.stop();
 		}, { once: true });

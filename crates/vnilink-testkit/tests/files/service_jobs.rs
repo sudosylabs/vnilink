@@ -143,6 +143,10 @@ fn moves_files_both_ways(
 fn files_service_jobs_complete_both_ways_and_keep_their_sources() -> TestResult {
     let trace = traced();
     let pair = Pair::for_files();
+    pair.controller
+        .core
+        .set_service_sharing(ServiceKind::Files, false)?;
+    pair.controller.core.stop_hosting()?;
     // The host offers a Desktop only with a screen to show.
     vnilink_testkit::desktop::install_screen(&pair.host.core)?;
     moves_files_both_ways(&trace, &pair, |connection| {

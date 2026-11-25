@@ -443,7 +443,13 @@ export class EngineMainService extends Disposable implements IEngineSettingsServ
 			return Promise.reject(new Error('Engine unavailable'));
 		}
 		this.pending++;
-		const result = lane.then(() => this.send(command));
+		const connection = this.connection;
+		const result = lane.then(() => {
+			if (this.connection !== connection) {
+				throw new Error('Engine unavailable');
+			}
+			return this.send(command);
+		});
 		const tracked = result.then(value => {
 			this.pending--;
 			return value;

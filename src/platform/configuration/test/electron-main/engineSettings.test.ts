@@ -133,6 +133,13 @@ suite('EngineSettings', () => {
 			await assert.rejects(settings.update('terminal.replaySize', 2048), /Replay can’t be larger than the history limit/);
 			assert.deepStrictEqual([policies.terminal.max_sessions, policies.terminal.max_sessions_per_peer, policies.terminal.replay_bytes], [4, 4, 8192]);
 		});
+		test('an existing clipboard grant can be withdrawn and cannot be enabled again', async () => {
+			const settings = await createSettings();
+			await settings.update('sharing.clipboard', false);
+			assert.ok(settings.restricted.includes('sharing.clipboard'));
+			await assert.rejects(settings.update('sharing.clipboard', true), /clipboard sync is unavailable/);
+			assert.strictEqual(policies.sharing.clipboard, false);
+		});
 		test('sharing the screen grants viewing, control and the screen\'s sound, and nothing else', async () => {
 			const settings = await createSettings();
 			await settings.update('sharing.screen', true);

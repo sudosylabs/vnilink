@@ -158,9 +158,12 @@ const sharing: PolicyBinding = {
 			throw new Error('Invalid sharing policy reply');
 		}
 		const policy = reply.policy;
-		return { values: Object.fromEntries(Object.entries(sharingFields).map(([key, [field]]) => [key, policy[field]])), restricted: [] };
+		return { values: Object.fromEntries(Object.entries(sharingFields).map(([key, [field]]) => [key, policy[field]])), restricted: policy.clipboard ? [] : ['sharing.clipboard'] };
 	},
 	async write(engine, key, value) {
+		if (key === 'sharing.clipboard' && value === true) {
+			throw new SettingValidationError(nls.localize('sharing.clipboardUnavailable', 'Desktop clipboard sync is unavailable.'));
+		}
 		// Partial updates patch the engine's consent atomically.
 		await expectDone(engine, { type: 'setSharingPolicy', policy: Object.fromEntries((sharingFields[key] ?? []).map(field => [field, value === true])) });
 	},

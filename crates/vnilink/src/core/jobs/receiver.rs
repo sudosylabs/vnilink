@@ -23,7 +23,7 @@ impl Core {
                 return self.ask_prepared_manifest(id);
             }
         }
-        let (wire_job, peer_bytes, file_index, file_count) = {
+        let (wire_job, peer_bytes, file_index, file_count, owner) = {
             let jobs = lock(&self.shared.jobs);
             let record = jobs.get(&id).ok_or(Error::InvalidSetting(NO_JOB))?;
             (
@@ -31,13 +31,14 @@ impl Core {
                 record.peer_key,
                 record.file_index,
                 record.file_count(),
+                record.owner,
             )
         };
         if file_index >= file_count {
             // Zero-file manifests still carry directory entries: build the
             // skeleton before claiming completion so empty folders land.
             // Revocation stops here: no new directories after the grant is gone.
-            if !Self::receiver_granted(&self.shared, &peer_bytes) {
+            if !self.receiver_granted(&peer_bytes, owner)? {
                 return self.mark_interrupted(id, PERMISSION_OFF);
             }
             if let Err(error) = self.ensure_receiver_dirs(id) {
@@ -52,7 +53,7 @@ impl Core {
         // creation is idempotent, so repeats stay safe. Revocation stops
         // directory creation as well as file publication.
         if file_index == 0 {
-            if !Self::receiver_granted(&self.shared, &peer_bytes) {
+            if !self.receiver_granted(&peer_bytes, owner)? {
                 return self.mark_interrupted(id, PERMISSION_OFF);
             }
             if let Err(error) = self.ensure_receiver_dirs(id) {
@@ -102,7 +103,7 @@ impl Core {
         }
         // Fetch under the receiver's own grant: revocation stops new
         // reads here even while the sender still serves.
-        if !Self::receiver_granted(&self.shared, &peer_bytes) {
+        if !self.receiver_granted(&peer_bytes, owner)? {
             return self.mark_interrupted(id, PERMISSION_OFF);
         }
         // Admission precedes network fetching and export. Saturated workers
@@ -220,7 +221,7 @@ impl Core {
         // Revocation between fetch and publication must not create the
         // destination file: re-check authorization before any staging or
         // commit. The publication itself re-checks as well.
-        if !Self::receiver_granted(&self.shared, &peer_bytes) {
+        if !self.receiver_granted(&peer_bytes, owner)? {
             return self.mark_interrupted(id, PERMISSION_OFF);
         }
         use crate::transfer::Received;
@@ -887,15 +888,16 @@ impl Core {
         self.job_snapshot(id)
     }
 
-    /// Receiver-side authorization at publication time: the peer must still
-    /// be paired with the transfer grant. Revocation stops publication even
-    /// when bytes already arrived.
-    pub(super) fn receiver_granted(shared: &Shared, peer: &[u8; 32]) -> bool {
-        let state = lock(&shared.state);
-        match state.trust.get(peer) {
-            Some(device) => state.trust.granted(&device.endpoint_id, Grant::Transfer),
-            None => false,
-        }
+    /// A lost owner interrupts the job with the link's cause; a live hosted
+    /// job whose grant was withdrawn stops for the permission change.
+    pub(super) fn receiver_granted(
+        &self,
+        peer: &[u8; 32],
+        owner: Option<super::service_jobs::JobOwner>,
+    ) -> Result<bool, Error> {
+        let state = lock(&self.shared.state);
+        super::service_jobs::check_owner(&state, owner)?;
+        Ok(job_granted(&state, peer, owner))
     }
 
     pub(super) fn mark_failed(

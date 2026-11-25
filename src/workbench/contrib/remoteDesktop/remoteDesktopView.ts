@@ -375,7 +375,7 @@ export class RemoteDesktopView extends Disposable implements WorkbenchTab {
 			toAction({
 				id: 'desktop.record',
 				label: this.recording.recording ? nls.localize('desktop.stopRecording', 'Stop Recording') : nls.localize('desktop.record', 'Record Screen'),
-				enabled: this.phase === 'live' && !this.recording.stopping,
+				enabled: this.phase === 'live' && !this.recording.starting && !this.recording.stopping,
 				run: () => void this.toggleRecording(),
 			}),
 		];

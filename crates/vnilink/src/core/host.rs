@@ -97,7 +97,7 @@ impl Core {
             }
             session.enter(SessionPhase::Stopping);
             let (stop, peer) = (session.stop.clone(), session.peer_id.clone());
-            super::admission::dismiss(&self.shared, &mut state, &peer);
+            super::admission::forget(&self.shared, &mut state, &peer);
             stop
         };
         crate::ignored!(

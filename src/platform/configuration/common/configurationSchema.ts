@@ -529,7 +529,7 @@ registerSettings('sharing', {
 		...sharing('camera', nls.localize('sharing.camera', 'Camera')),
 		...sharing('microphone', nls.localize('sharing.microphone', 'Microphone')),
 		...sharing('systemAudio', nls.localize('sharing.audio', 'System audio'), nls.localize('sharing.audioHelp', 'Turns on with screen viewing. Turn it off to share the picture without sound.')),
-		...sharing('clipboard', nls.localize('sharing.clipboard', 'Clipboard'), nls.localize('sharing.clipboardHelp', 'During remote desktop sessions.')),
+		...sharing('clipboard', nls.localize('sharing.clipboard', 'Clipboard'), nls.localize('sharing.clipboardHelp', 'Desktop clipboard sync is unavailable in this version.')),
 		...sharing('recording', nls.localize('sharing.recording', 'Record desktop sessions')),
 		...sharing('systemActions', nls.localize('sharing.actions', 'System actions'), nls.localize('sharing.actionsHelp', 'Only the actions turned on under Remote actions.')),
 		...sharing('unattended', nls.localize('sharing.unattended', 'Allow access without asking'), nls.localize('sharing.unattendedHelp', 'Paired computers use what’s shared without anyone here accepting them. When off, this computer asks each time one starts.')),

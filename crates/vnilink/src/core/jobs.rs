@@ -961,6 +961,21 @@ fn serving(record: &JobRecord, peer: &[u8; 32]) -> bool {
         )
 }
 
+/// Local consent governs hosted work. A locally initiated copy is authorized by
+/// its Files owner and can move only the entries bound to that job. Owner
+/// liveness is checked separately so a lost link retains its own error.
+fn job_granted(
+    state: &State,
+    peer: &[u8; 32],
+    owner: Option<super::service_jobs::JobOwner>,
+) -> bool {
+    if owner.is_some_and(|owner| !owner.hosted) {
+        state.trust.get(peer).is_some()
+    } else {
+        state.trust.granted(peer, Grant::Transfer)
+    }
+}
+
 /// The peer's sending job with wire id `job` while it may serve, under a
 /// live owner.
 fn served_job<'a>(
@@ -970,6 +985,7 @@ fn served_job<'a>(
     job: u64,
 ) -> Option<&'a JobRecord> {
     serving_job(jobs, peer, job)
+        .filter(|record| job_granted(state, peer, record.owner))
         .filter(|record| super::service_jobs::check_owner(state, record.owner).is_ok())
 }
 
@@ -989,7 +1005,7 @@ fn serving_job<'a>(
 pub(super) fn still_serving(shared: &Shared, peer: &[u8; 32], job: u64) -> bool {
     let jobs = lock(&shared.jobs);
     let state = lock(&shared.state);
-    state.trust.granted(peer, Grant::Transfer) && served_job(&jobs, &state, peer, job).is_some()
+    served_job(&jobs, &state, peer, job).is_some()
 }
 
 /// Bytes a sending stream advanced at least before its job hears again,
@@ -1053,9 +1069,6 @@ pub(super) fn open_served_file(
     let (id, local_root, local_rel, entry, scanned_id, mut pin) = {
         let jobs = lock(&shared.jobs);
         let state = lock(&shared.state);
-        if !state.trust.granted(peer, Grant::Transfer) {
-            return Err(STATUS_DENIED);
-        }
         let record = served_job(&jobs, &state, peer, job).ok_or(STATUS_DENIED)?;
         let entry = record.file(file as usize).ok_or(STATUS_DENIED)?.clone();
         (
@@ -1209,20 +1222,25 @@ fn paths_overlap(a: &str, b: &str) -> bool {
 /// work stops instead of publishing after revocation.
 pub(super) fn interrupt_peer_jobs(shared: &Shared, peer: &[u8; 32], unpaired: bool) {
     let reason = if unpaired { UNPAIRED } else { PERMISSION_OFF };
-    interrupt_jobs(shared, peer, false, reason);
+    interrupt_jobs(
+        shared,
+        peer,
+        if unpaired { None } else { Some(false) },
+        reason,
+    );
 }
 
 /// Marks the jobs riding a controller session that ended interrupted.
 pub(super) fn interrupt_controller_jobs(shared: &Shared, peer: &[u8; 32]) {
-    interrupt_jobs(shared, peer, true, CONNECTION_ENDED);
+    interrupt_jobs(shared, peer, Some(true), CONNECTION_ENDED);
 }
 
-fn interrupt_jobs(shared: &Shared, peer: &[u8; 32], controller_only: bool, reason: &'static str) {
+fn interrupt_jobs(shared: &Shared, peer: &[u8; 32], outgoing: Option<bool>, reason: &'static str) {
     let ids: Vec<u64> = {
         let mut jobs = lock(&shared.jobs);
         let mut ids = Vec::new();
         for record in jobs.values_mut() {
-            if record.peer_key == *peer && (!controller_only || record.outgoing) {
+            if record.peer_key == *peer && outgoing.is_none_or(|side| side == record.outgoing) {
                 match record.state {
                     JobState::Serving | JobState::Transferring | JobState::WaitingDecision => {
                         record.enter(JobState::Interrupted);

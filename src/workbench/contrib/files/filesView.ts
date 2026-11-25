@@ -12,6 +12,7 @@ import { Icons } from '../../../base/common/icons.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { isMacintosh, isWindows } from '../../../base/common/platform.js';
 import { IInstantiationService } from '../../../platform/instantiation/common/instantiation.js';
+import { engineErrorCategory } from '../../../platform/engine/common/engine.js';
 import type { FilesPane, FolderLocation } from '../../../platform/state/common/uiState.js';
 import type { DeviceSummary } from '../../services/devices/deviceService.js';
 import { IFilesService, type FilesFailure, type FilesItem, type IFilesSession } from '../../services/files/filesService.js';
@@ -299,8 +300,13 @@ export class FilesView extends Disposable implements WorkbenchTab {
 		}
 		try {
 			await session.copy(from, items, into);
-		} catch {
-			// The status bar's list shows what was refused; a lost connection shows in the pane.
+		} catch (error) {
+			if (!this._store.isDisposed && this.session === session) {
+				const pane = from === 'local' ? this.local : this.remote;
+				pane.say(engineErrorCategory(error) === 'Busy'
+					? nls.localize('files.copyBusy', 'The copy couldn’t start because the transfer list is full.')
+					: nls.localize('files.copyFailed', 'The copy request couldn’t be completed. Check Transfers for items already submitted.'));
+			}
 		}
 	}
 

@@ -99,6 +99,23 @@ suite('AdmissionNotices', () => {
 		assert.deepStrictEqual(open, []);
 		assert.deepStrictEqual(answers(engine), []);
 	});
+	test('a replacement engine can reuse a request id without accepting the previous notice', async () => {
+		const replies: ((answer: number) => void)[] = [];
+		createNotices(() => new Promise(resolve => replies.push(resolve)));
+		engine.fireEvents({ events: [requested('1')], resync: false });
+		await timeout(0);
+		engine.setAvailable(false);
+		engine.setAvailable(true);
+		engine.fireEvents({ events: [requested('1', 'other')], resync: false });
+		await timeout(0);
+		assert.strictEqual(replies.length, 2);
+		replies[0](1);
+		await timeout(0);
+		assert.deepStrictEqual(answers(engine), []);
+		replies[1](0);
+		await timeout(0);
+		assert.deepStrictEqual(answers(engine), [{ type: 'answerAdmissionRequest', id: '1', accept: false }]);
+	});
 	test('quitting closes an open notice without answering it, and none opens after', async () => {
 		const notices = createNotices(unanswered);
 		engine.fireEvents({ events: [requested('3')], resync: false });

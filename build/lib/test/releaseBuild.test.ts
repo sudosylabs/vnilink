@@ -421,6 +421,18 @@ suite('release build', () => {
 			await assert.rejects(acquireLock(lock), new RegExp(`process ${String(process.pid)}\\) is publishing here`));
 			await release();
 		});
+		test('only one contender acquires a stale lock', async () => {
+			await mkdir(lock);
+			await writeFile(join(lock, 'owner.json'), JSON.stringify({ pid: 2 ** 22 + 12345 }));
+			const results = await Promise.allSettled(Array.from({ length: 16 }, () => acquireLock(lock)));
+			const holders = results.filter(result => result.status === 'fulfilled');
+			try {
+				assert.strictEqual(holders.length, 1);
+				await assert.rejects(acquireLock(lock), /is publishing here/);
+			} finally {
+				await Promise.all(holders.map(holder => holder.value()));
+			}
+		});
 		test('is free again once released', async () => {
 			await (await acquireLock(lock))();
 			await (await acquireLock(lock))();

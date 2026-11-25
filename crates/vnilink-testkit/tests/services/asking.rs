@@ -352,6 +352,15 @@ fn unattended_sharing_asks_nothing_until_turned_off() -> TestResult {
     let connection = pair.connect_services();
     answer(&ask(controller, &connection, ServiceKind::Files))?;
     let (service, pipe) = controller.open_files(&connection)?;
+    unattended(false)?;
+    let host_events = host.core.subscribe()?;
+    let asked = ask(controller, &connection, ServiceKind::Files);
+    host.core
+        .answer_admission_request(requested(&host_events), false)?;
+    assert!(
+        matches!(answer(&asked), Err(Error::Declined)),
+        "an existing unattended service cannot approve another"
+    );
     drop(pipe);
     controller
         .core
@@ -359,7 +368,6 @@ fn unattended_sharing_asks_nothing_until_turned_off() -> TestResult {
     vnilink_testkit::wait_for("the host to end the service", DEFAULT_WAIT, || {
         host.core.hosted_services().ok()?.is_empty().then_some(())
     });
-    unattended(false)?;
     assert!(
         matches!(controller.open_files(&connection), Err(Error::NotAdmitted)),
         "the grace its use left is forgotten"

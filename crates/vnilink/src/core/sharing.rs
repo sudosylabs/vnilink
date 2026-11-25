@@ -59,6 +59,7 @@ impl Core {
     ) -> Result<(), Error> {
         let _serial = lock(&self.shared.sharing_serial);
         let peers;
+        let files_revoked;
         let policy;
         {
             let mut state = self.alive_state()?;
@@ -71,6 +72,7 @@ impl Core {
             if previous == policy {
                 return Ok(());
             }
+            files_revoked = previous.files && !policy.files;
             state.trust.sharing = policy;
             if let Err(error) = persist(&self.shared, &mut state) {
                 state.trust.sharing = previous;
@@ -125,7 +127,7 @@ impl Core {
             }
         }
         for peer in peers {
-            if !policy.files {
+            if files_revoked {
                 super::transfer::close_peer_files(&self.shared, &peer);
                 super::jobs::interrupt_peer_jobs(&self.shared, &peer, false);
             }
