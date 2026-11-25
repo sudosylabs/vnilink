@@ -22,12 +22,17 @@ impl Core {
         staged: &std::path::Path,
         choice: ConflictChoice,
     ) -> Result<Option<String>, Error> {
-        let (local_root, local_rel, peer_key) = {
+        let (local_root, local_rel, peer_key, owner) = {
             let jobs = lock(&self.shared.jobs);
             let record = jobs.get(&id).ok_or(Error::InvalidSetting(NO_JOB))?;
-            (record.local_root, record.local_rel.clone(), record.peer_key)
+            (
+                record.local_root,
+                record.local_rel.clone(),
+                record.peer_key,
+                record.owner,
+            )
         };
-        if !Self::receiver_granted(&self.shared, &peer_key) {
+        if !self.receiver_granted(&peer_key, owner)? {
             crate::ignored!(
                 crate::trace::FILES,
                 "a staged file left behind is swept with its job's staging",
@@ -150,10 +155,7 @@ impl Core {
             (record.owner, record.peer_key)
         };
         let state = lock(&self.shared.state);
-        let granted = match state.trust.get(&peer_key) {
-            Some(device) => state.trust.granted(&device.endpoint_id, Grant::Transfer),
-            None => false,
-        };
+        let granted = job_granted(&state, &peer_key, owner);
         granted && super::service_jobs::check_owner(&state, owner).is_ok()
     }
 
@@ -417,12 +419,7 @@ impl Core {
             // update needs `state`, so it blocks until after the commit.
             // Jobs->state order; no other path nests state->jobs.
             let state_guard = lock(&self.shared.state);
-            let granted = match state_guard.trust.get(&peer_key) {
-                Some(device) => state_guard
-                    .trust
-                    .granted(&device.endpoint_id, Grant::Transfer),
-                None => false,
-            };
+            let granted = job_granted(&state_guard, &peer_key, record.owner);
             if !granted || super::service_jobs::check_owner(&state_guard, record.owner).is_err() {
                 if record.state != JobState::Cancelled {
                     record.enter(JobState::Interrupted);

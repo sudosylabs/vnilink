@@ -42,7 +42,7 @@ pub(super) const TAG: u8 = 9;
 pub(super) struct JobOwner {
     pub(super) id: u64,
     pub(super) generation: u64,
-    hosted: bool,
+    pub(super) hosted: bool,
 }
 
 /// The Files services whose jobs are moving files now, as `(hosted, id,
