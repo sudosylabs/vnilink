@@ -137,6 +137,21 @@ suite('FilesService', () => {
 		assert.deepStrictEqual(dataChannels.opened[0].fileOperations.map(operation => operation.type), ['adopt', 'jobs']);
 		session.release();
 	});
+	test('a failed takeover stays visible and Resume retries it from the same tab', async () => {
+		const interrupted = { ...job('3', 'Interrupted'), error: 'The job record could not be saved' };
+		dataChannels.fileAnswer = operation => {
+			if (operation.type === 'adopt') {
+				return { ok: [interrupted] };
+			}
+			return operation.type === 'resume' ? { ok: job(operation.jobId, 'Complete') } : quiet(operation);
+		};
+		const session = await openSession();
+		assert.deepStrictEqual(session.jobs, [interrupted]);
+		await session.resume(session.jobs[0].id);
+		assert.deepStrictEqual(session.jobs, [job('3', 'Complete')]);
+		assert.strictEqual(dataChannels.opened.length, 1);
+		session.release();
+	});
 	test('a new session holds the jobs the other computer reports', async () => {
 		dataChannels.fileAnswer = operation => operation.type === 'jobs' ? { ok: [job('3', 'Complete')] } : { ok: null };
 		const session = await openSession();

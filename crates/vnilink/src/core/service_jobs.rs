@@ -612,7 +612,7 @@ impl Core {
     /// Claims this peer's Files jobs that were interrupted when their owner
     /// went, and resumes them, so a reconnected Files tab carries on where
     /// the lost one stopped. A job that cannot be claimed or resumed yet
-    /// stays as it is; the claimed ones are returned.
+    /// is returned with its failure so the same tab can offer a retry.
     pub fn files_service_resume_orphans(
         &self,
         id: u64,
@@ -628,7 +628,7 @@ impl Core {
             jobs.values()
                 .filter(|record| {
                     record.peer_key == peer
-                        && record.state == JobState::Interrupted
+                        && matches!(record.state, JobState::Interrupted | JobState::Failed)
                         && record.owner.is_some_and(|o| !o.hosted && o != owner)
                         && check_owner(&state, record.owner).is_err()
                 })
@@ -636,17 +636,37 @@ impl Core {
                 .collect::<Vec<_>>()
         };
         orphans.sort_unstable();
-        let mut claimed = Vec::new();
+        let mut recovered = Vec::new();
         for job in orphans {
-            if self.files_service_adopt_job(id, generation, job).is_err() {
-                continue;
+            let result = self
+                .files_service_adopt_job(id, generation, job)
+                .and_then(|snapshot| {
+                    if snapshot.state == JobState::Failed {
+                        Ok(snapshot)
+                    } else {
+                        self.files_service_job_resume(id, generation, job)
+                    }
+                });
+            match result {
+                Ok(snapshot) => recovered.push(snapshot),
+                Err(error) => {
+                    let jobs = lock(&self.shared.jobs);
+                    let state = lock(&self.shared.state);
+                    if let Some(record) = jobs.get(&job).filter(|record| {
+                        record.peer_key == peer
+                            && (record.owner == Some(owner)
+                                || record.owner.is_some_and(|old| {
+                                    !old.hosted && check_owner(&state, Some(old)).is_err()
+                                }))
+                    }) {
+                        let mut snapshot = record.snapshot();
+                        snapshot.error = Some(error.to_string());
+                        recovered.push(snapshot);
+                    }
+                }
             }
-            let snapshot = self
-                .files_service_job_resume(id, generation, job)
-                .or_else(|_| self.job_snapshot(job))?;
-            claimed.push(snapshot);
         }
-        Ok(claimed)
+        Ok(recovered)
     }
 }
 

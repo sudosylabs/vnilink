@@ -906,11 +906,11 @@ fn an_adoption_that_fails_to_save_can_be_retried() -> TestResult {
     let saved = controller.transfers().join("journal.saved");
     std::fs::rename(&record, &saved)?;
     std::fs::create_dir(&record)?;
-    assert!(
-        core.files_service_adopt_job(fresh.id, fresh.generation, job)
-            .is_err(),
-        "an adoption that cannot be saved fails"
-    );
+    let recovery = core.files_service_resume_orphans(fresh.id, fresh.generation)?;
+    assert_eq!(recovery.len(), 1, "the fresh tab sees the interrupted job");
+    let retry = recovery[0].id;
+    assert_eq!(retry, job);
+    assert!(recovery[0].error.is_some(), "takeover explains the failure");
     assert!(
         core.files_service_jobs(fresh.id, fresh.generation)?
             .is_empty(),
@@ -923,7 +923,7 @@ fn an_adoption_that_fails_to_save_can_be_retried() -> TestResult {
     );
     std::fs::remove_dir(&record)?;
     std::fs::rename(&saved, &record)?;
-    let adopted = core.files_service_adopt_job(fresh.id, fresh.generation, job)?;
+    let adopted = core.files_service_adopt_job(fresh.id, fresh.generation, retry)?;
     assert_eq!(
         adopted.state,
         JobState::Interrupted,

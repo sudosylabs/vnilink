@@ -172,6 +172,7 @@ pub struct DataChannel {
     owner: Option<(u64, u64)>,
     files: Mutex<Option<Arc<vnilink_app::FilesService>>>,
     jobs: Arc<Mutex<Vec<u64>>>,
+    recoverable: Arc<Mutex<std::collections::HashSet<u64>>>,
     /// What this channel last told JavaScript about its jobs.
     job_view: Mutex<JobView>,
     /// The watched folder's change count last reported to the window.
@@ -791,6 +792,7 @@ impl DataChannel {
                 .cloned()
                 .ok_or_else(|| Error::from_reason("Missing file owner"))?,
             jobs: self.jobs.clone(),
+            recoverable: self.recoverable.clone(),
             closed: self.closed.clone(),
             operation,
         }))
@@ -1334,6 +1336,7 @@ impl Task for OpenChannelTask {
             owner: owner.map(|owner| (owner.id, owner.generation)),
             files: Mutex::new(files),
             jobs: Arc::new(Mutex::new(Vec::new())),
+            recoverable: Arc::default(),
             job_view: Mutex::new(JobView::default()),
             folder_seen: std::sync::atomic::AtomicU64::new(0),
             video: Mutex::new(video),
@@ -1538,6 +1541,7 @@ pub struct FileTask {
     session: u64,
     generation: u64,
     jobs: Arc<Mutex<Vec<u64>>>,
+    recoverable: Arc<Mutex<std::collections::HashSet<u64>>>,
     closed: Arc<std::sync::atomic::AtomicBool>,
     operation: FileOperation,
 }
@@ -1725,19 +1729,60 @@ impl FileTask {
                 Ok(serde_json::Value::Null)
             }
             FileOperation::Adopt => {
-                let adopted = files.resume_orphans()?;
+                let recovered = files.resume_orphans()?;
+                let owned: std::collections::HashSet<_> =
+                    files.jobs()?.into_iter().map(|job| job.id).collect();
                 let mut jobs = self
                     .jobs
                     .lock()
                     .map_err(|_| Error::from_reason("Channel unavailable"))?;
-                jobs.extend(adopted.iter().map(|job| job.id));
-                drop(jobs);
-                Self::json(adopted.iter().map(crate::transfer_job).collect::<Vec<_>>())
+                let mut pending = self
+                    .recoverable
+                    .lock()
+                    .map_err(|_| Error::from_reason("Channel unavailable"))?;
+                for job in &recovered {
+                    if owned.contains(&job.id) {
+                        if !jobs.contains(&job.id) {
+                            jobs.push(job.id);
+                        }
+                    } else {
+                        pending.insert(job.id);
+                    }
+                }
+                Self::json(
+                    recovered
+                        .iter()
+                        .map(crate::transfer_job)
+                        .collect::<Vec<_>>(),
+                )
             }
             FileOperation::Cancel { job_id } => {
                 Self::json(crate::transfer_job(&files.job_cancel(self.owned(job_id)?)?))
             }
             FileOperation::Resume { job_id } => {
+                let id = parse_id(job_id, "Invalid job")?;
+                let pending = self
+                    .recoverable
+                    .lock()
+                    .map_err(|_| Error::from_reason("Channel unavailable"))?
+                    .contains(&id);
+                if pending {
+                    files.adopt_job(id)?;
+                    let mut jobs = self
+                        .jobs
+                        .lock()
+                        .map_err(|_| Error::from_reason("Channel unavailable"))?;
+                    if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+                        return Err(Refused("NoSession: the window closed".into()));
+                    }
+                    if !jobs.contains(&id) {
+                        jobs.push(id);
+                    }
+                    self.recoverable
+                        .lock()
+                        .map_err(|_| Error::from_reason("Channel unavailable"))?
+                        .remove(&id);
+                }
                 Self::json(crate::transfer_job(&files.job_resume(self.owned(job_id)?)?))
             }
             FileOperation::Resolve {
@@ -2061,6 +2106,7 @@ mod tests {
             generation: active.generation,
             files: files.files.lock().unwrap().as_ref().unwrap().clone(),
             jobs: files.jobs.clone(),
+            recoverable: files.recoverable.clone(),
             closed: files.closed.clone(),
             operation: FileOperation::Submit {
                 direction: "upload".into(),
