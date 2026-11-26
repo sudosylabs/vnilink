@@ -34,6 +34,15 @@ suite('Access settings page', () => {
 		assert.strictEqual(fixture.configuration.updates.at(-1)?.key, 'sharing.screen');
 		assert.strictEqual(screen().checked, true);
 	});
+	test('the recording grant names both sources before it is enabled', async () => {
+		const recording = element<HTMLInputElement>(page.element, '[data-setting="sharing.recording"]');
+		assert.ok(recording.closest('.setting-row')?.textContent.includes('Allow recording of shared screens and cameras'));
+		assert.strictEqual(recording.checked, false);
+		toggle(recording);
+		await settle();
+		assert.strictEqual(fixture.configuration.updates.at(-1)?.key, 'sharing.recording');
+		assert.strictEqual(recording.checked, true);
+	});
 	test('a refused sharing change keeps the value in effect and explains why', async () => {
 		toggle(screen());
 		await settle();
