@@ -614,7 +614,11 @@ impl DataChannel {
         view.more = false;
         let mut changed = Vec::new();
         let mut bytes = 0;
-        for job in files.jobs().map_err(core_error)? {
+        let jobs = files.jobs().map_err(core_error)?;
+        // Files lists jobs in id order, including the ones whose next page has yet to go out.
+        view.sent
+            .retain(|id, _| jobs.binary_search_by_key(id, |job| job.id).is_ok());
+        for job in jobs {
             let shape = crate::transfer_job(&job);
             let text =
                 serde_json::to_string(&shape).map_err(|_| Error::from_reason("Invalid job"))?;
@@ -2120,18 +2124,37 @@ mod tests {
         let answer = |task: &mut FileTask| -> serde_json::Value {
             serde_json::from_str(&task.compute().unwrap()).unwrap()
         };
-        let progress = answer(&mut file_task)["ok"].clone();
-        assert!(
-            progress.get("data").is_none(),
-            "File payload crossed the UI boundary"
-        );
-        let job_id = progress["id"].as_str().unwrap().to_owned();
-        file_task.operation = FileOperation::Cancel {
-            job_id: job_id.clone(),
-        };
-        assert_eq!(answer(&mut file_task)["ok"]["state"], "Cancelled");
-        file_task.operation = FileOperation::Forget { job_id };
-        assert_eq!(answer(&mut file_task)["ok"], serde_json::Value::Null);
+        for _ in 0..3 {
+            let progress = answer(&mut file_task)["ok"].clone();
+            assert!(
+                progress.get("data").is_none(),
+                "File payload crossed the UI boundary"
+            );
+            let job_id = progress["id"].as_str().unwrap().to_owned();
+            let submit = std::mem::replace(
+                &mut file_task.operation,
+                FileOperation::Cancel {
+                    job_id: job_id.clone(),
+                },
+            );
+            assert_eq!(answer(&mut file_task)["ok"]["state"], "Cancelled");
+            files.job_view.lock().unwrap().at = None;
+            files.job_updates().unwrap();
+            assert_eq!(
+                files.job_view.lock().unwrap().sent.len(),
+                1,
+                "one visible snapshot"
+            );
+            file_task.operation = FileOperation::Forget { job_id };
+            assert_eq!(answer(&mut file_task)["ok"], serde_json::Value::Null);
+            files.job_view.lock().unwrap().at = None;
+            files.job_updates().unwrap();
+            assert!(
+                files.job_view.lock().unwrap().sent.is_empty(),
+                "zero snapshots or serialized bytes retained after forgetting"
+            );
+            file_task.operation = submit;
+        }
         // The other computer's folders are listed, made, renamed and deleted
         // through the channel; a refusal is an answer, and the channel lives.
         file_task.operation = FileOperation::Places;
