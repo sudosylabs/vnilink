@@ -158,9 +158,19 @@ const sharing: PolicyBinding = {
 			throw new Error('Invalid sharing policy reply');
 		}
 		const policy = reply.policy;
-		return { values: Object.fromEntries(Object.entries(sharingFields).map(([key, [field]]) => [key, policy[field]])), restricted: policy.clipboard ? [] : ['sharing.clipboard'] };
+		const restricted: string[] = [];
+		if (!policy.clipboard) {
+			restricted.push('sharing.clipboard');
+		}
+		if (!policy.microphone) {
+			restricted.push('sharing.microphone');
+		}
+		return { values: Object.fromEntries(Object.entries(sharingFields).map(([key, [field]]) => [key, policy[field]])), restricted };
 	},
 	async write(engine, key, value) {
+		if (key === 'sharing.microphone' && value === true) {
+			throw new SettingValidationError(nls.localize('sharing.microphoneUnavailable', 'Remote microphone listening is unavailable.'));
+		}
 		if (key === 'sharing.clipboard' && value === true) {
 			throw new SettingValidationError(nls.localize('sharing.clipboardUnavailable', 'Desktop clipboard sync is unavailable.'));
 		}

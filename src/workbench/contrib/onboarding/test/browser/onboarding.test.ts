@@ -135,6 +135,14 @@ suite('OnboardingView', () => {
 		assert.strictEqual(configuration.getValue('application.acceptConnections'), false);
 		assert.deepStrictEqual([saved['onboarding.completed'], shown, closed], [true, ['devices'], ['onboarding']]);
 	});
+	test('setup offers camera sharing and leaves the unavailable microphone out', async () => {
+		await press('Get Started');
+		await press('Continue');
+		await choose('input[value="reachable"]');
+		await press('Continue');
+		assert.ok(view.element.querySelector('#onboarding-sharing-camera'));
+		assert.strictEqual(view.element.querySelector('#onboarding-sharing-microphone'), null);
+	});
 	test('sharing the screen asks for the screen permission before the end, and saves the switch', async () => {
 		await press('Get Started');
 		await press('Continue');

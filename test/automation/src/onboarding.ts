@@ -39,7 +39,7 @@ export class Onboarding {
 
 	/**
 	 * Walks from the welcome's first step to its permissions step as someone
-	 * sharing this computer's screen, camera and microphone, and says whether
+	 * sharing this computer's screen and camera, and says whether
 	 * the system asks for any permission there; where it asks for none, the
 	 * welcome has no such step.
 	 */
@@ -48,7 +48,7 @@ export class Onboarding {
 		await this.continue();
 		await this.code.waitAndClick('#onboarding-role-reachable');
 		await this.continue();
-		for (const shared of ['screen', 'camera', 'microphone']) {
+		for (const shared of ['screen', 'camera']) {
 			const toggle = `#onboarding-sharing-${shared}`;
 			if (!await this.code.getElement(`${toggle}:checked`)) {
 				await this.code.waitAndClick(toggle);

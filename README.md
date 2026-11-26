@@ -29,7 +29,7 @@ VniLink connects computers you have paired with each other, across macOS, Window
 - **Remote desktop.** Watch or control another computer's screen, with its pointer, keyboard and sound.
 - **Files.** Browse the other computer's disk and copy files both ways. Copies resume where they stopped.
 - **Terminal.** Open a shell on the other computer, and keep it running across disconnects if that computer allows it.
-- **Camera and recording.** Use the other computer's camera and microphone, and record a session.
+- **Camera and recording.** View the other computer's camera and record a shared camera or screen session.
 
 Desktop clipboard sync is unavailable in this version.
 
