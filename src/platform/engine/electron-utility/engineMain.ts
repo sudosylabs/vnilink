@@ -25,6 +25,7 @@ const disposables = new DisposableStore();
 const server = disposables.add(new UtilityProcessServer(host));
 
 server.registerChannel(ENGINE_HOST_CHANNEL_NAME, ProxyChannel.fromService({
+	admitCommand: (command: unknown) => host.admitCommand(command),
 	execute: (command: unknown) => host.execute(command),
 	onDidReceiveEvents: host.onDidReceiveEvents,
 }, disposables, { disableMarshalling: true, unbufferedEvents: ['onDidReceiveEvents'] }));

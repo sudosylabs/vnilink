@@ -9,6 +9,8 @@ import assert from 'assert';
 import { DeferredPromise, timeout } from '../../../../base/common/async.js';
 import { toDisposable } from '../../../../base/common/lifecycle.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
+import { runWithFakedTimers } from '../../../../base/test/common/virtualScheduling/index.js';
+import { TestEngineService } from '../common/testEngineService.js';
 import type { DataPacket, DesktopAudioStatus } from '../../common/dataChannel.js';
 import type { DesktopInputCommand } from '../../common/engine.js';
 import type { FileJob } from '../../common/files.js';
@@ -111,6 +113,22 @@ suite('DataChannelClient', () => {
 	setup(() => {
 		errors = [];
 	});
+	test('a files channel can become ready after twenty seconds of host approval', () => runWithFakedTimers({}, async () => {
+		const engine = disposables.add(new TestEngineService(() => ({ type: 'done' })));
+		engine.openDataChannel = () => Promise.resolve();
+		const { port1, port2 } = new MessageChannel();
+		const opening = DataChannelClient.open(engine, { kind: 'files', sessionId: '1', generation: '2' }, () => undefined, error => errors.push(error), {
+			acquire: (_name, nonce) => {
+				window.dispatchEvent(new MessageEvent('message', { source: window, origin: location.origin, data: nonce, ports: [port1] }));
+			},
+			release: () => undefined,
+		});
+		await timeout(20000);
+		port1.dispatchEvent(new MessageEvent('message', { data: { type: 'ready' } }));
+		(await opening).close();
+		port2.close();
+		assert.deepStrictEqual(errors, []);
+	}));
 	suite('packets', () => {
 		test('a packet is acknowledged only once it was consumed', async () => {
 			const consuming = new DeferredPromise<void>();

@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // ---------------------------------------------------------------------------------------------
 
+import { admissionTimeout, channelAdmission } from '../common/admission.js';
 import { isDesktopAudioOperation, isDesktopAudioStatus, isDesktopCursor, isDesktopMediaStatus, isDataPacket, isChannelRequest, MAX_FILE_OPERATIONS } from '../common/dataChannel.js';
 import type { DataChannelRequest, DataPacket, DataChannelMetrics, DesktopAudioOperation, DesktopAudioStatus, DesktopCursor, DesktopDecoderReport, DesktopMediaStatus } from '../common/dataChannel.js';
 import { Emitter } from '../../../base/common/event.js';
@@ -110,7 +111,7 @@ export class DataChannelClient implements IDataChannel {
 				const timeout = setTimeout(() => {
 					port.close();
 					reject(new Error('Native channel startup timed out'));
-				}, 15000);
+				}, 15000 + (channelAdmission(target) ? admissionTimeout : 0));
 				port.onmessage = (message) => {
 					clearTimeout(timeout);
 					if (record(message.data) && message.data.type === 'ready') {

@@ -8,6 +8,7 @@
 import { MessageChannelMain } from 'electron';
 import type { MessagePortMain } from 'electron';
 import { randomUUID } from 'node:crypto';
+import { CancellationToken } from '../../../base/common/cancellation.js';
 import type { Event } from '../../../base/common/event.js';
 import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { isMacintosh } from '../../../base/common/platform.js';
@@ -103,7 +104,7 @@ export class EngineChannel extends Disposable implements IServerChannel {
 		throw new Error(`Unknown engine event: ${event}`);
 	}
 
-	public async call<T>(context: string, command: string, arg?: unknown): Promise<T> {
+	public async call<T>(context: string, command: string, arg?: unknown, token = CancellationToken.None): Promise<T> {
 		const windowId = windowIdFromContext(context);
 		switch (command) {
 			case 'getAvailability': return this.engine.available as T;
@@ -114,7 +115,7 @@ export class EngineChannel extends Disposable implements IServerChannel {
 				await this.engine.startFresh();
 				return undefined as T;
 			case 'getRestartRequired': return await this.engine.getRestartRequired() as T;
-			case 'execute': return await this.execute(arg) as T;
+			case 'execute': return await this.execute(arg, token) as T;
 			case 'openDataChannel':
 				this.openDataChannel(windowId, arg);
 				return undefined as T;
@@ -122,14 +123,14 @@ export class EngineChannel extends Disposable implements IServerChannel {
 		throw new Error(`Unknown engine command: ${command}`);
 	}
 
-	private async execute(command: unknown): Promise<EngineReply> {
+	private async execute(command: unknown, token: CancellationToken): Promise<EngineReply> {
 		if (!isEngineCommand(command) || privateCommands.has(command.type)) {
 			throw new Error('Invalid engine command');
 		}
 		if (command.type === 'startNativeScreenSharing') {
 			await this.checkScreenSharing(command);
 		}
-		return this.engine.execute(command);
+		return this.engine.execute(command, token);
 	}
 
 	private async checkScreenSharing(command: Extract<EngineCommand, { type: 'startNativeScreenSharing' }>): Promise<void> {
