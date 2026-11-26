@@ -13,6 +13,7 @@
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { assertNativeFresh } from './native.ts';
 import { ProcessRunner } from './processes.ts';
 
 /** Runs `command` in `root` and resolves when it succeeds. */
@@ -52,6 +53,12 @@ export async function lintTypeScript(root: string, signal: AbortSignal, fix = fa
 
 export async function lintStyles(root: string, signal: AbortSignal, fix = false): Promise<void> {
 	await runNodeTool(root, signal, 'stylelint', ['src/**/*.css', ...(fix ? ['--fix'] : ['--max-warnings', '0'])]);
+}
+
+/** Native tests must run against the staged addon built from the current inputs. */
+export async function runNativeTests(root: string, signal: AbortSignal): Promise<void> {
+	await assertNativeFresh(root);
+	await runNodeTests(root, signal, 'test/native/*.test.mjs');
 }
 
 /** Node's test runner over `pattern`, which it expands itself. */
