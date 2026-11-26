@@ -2252,6 +2252,12 @@ mod tests {
         let mut states = Vec::new();
         crate::wait::wait_until("the transfer's completion to be pushed", || {
             if let Some(event) = files.read().unwrap() {
+                // A folder change recorded before the watch stopped may still be waiting to be read.
+                if event.kind == "folderChanged" {
+                    assert!(event.data.is_none());
+                    assert_eq!(event.metadata, "{}");
+                    return false;
+                }
                 assert_eq!(event.kind, "jobs");
                 let update: serde_json::Value = serde_json::from_str(&event.metadata).unwrap();
                 for job in update["jobs"].as_array().unwrap() {
