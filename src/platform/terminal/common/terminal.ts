@@ -30,7 +30,7 @@ export interface IProcessDataEvent {
 }
 
 /** Why a shell could not start, in the terms its computer shares. */
-export type TerminalLaunchFailure = 'disconnected' | 'notAllowed' | 'unsupported' | 'unavailable' | 'failed';
+export type TerminalLaunchFailure = 'declined' | 'unanswered' | 'disconnected' | 'notAllowed' | 'unsupported' | 'unavailable' | 'failed';
 
 export interface ITerminalLaunchError {
 	readonly code: TerminalLaunchFailure;

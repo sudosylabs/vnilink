@@ -9,7 +9,7 @@ import * as nls from '../../../nls.js';
 import { Emitter } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import type { DataPacket } from '../../../platform/engine/common/dataChannel.js';
-import type { RemoteStatus } from '../../../platform/engine/common/engine.js';
+import { engineErrorCategory, type RemoteStatus } from '../../../platform/engine/common/engine.js';
 import { IDataChannelService, type IDataChannel } from '../../../platform/engine/common/dataChannelService.js';
 import { IEngineService } from '../../../platform/engine/common/engineService.js';
 import { MAX_TERMINAL_COLUMNS, MAX_TERMINAL_ROWS, type IProcessDataEvent, type ITerminalChildProcess, type ITerminalLaunchError, type TerminalExit, type TerminalLaunchFailure } from '../../../platform/terminal/common/terminal.js';
@@ -109,13 +109,13 @@ export class EnginePty extends Disposable implements ITerminalChildProcess {
 			return { code: 'disconnected' };
 		}
 		const size = { cols: this.cols, rows: this.rows };
-		const resumeId = await this.detachedShell(session);
-		if (!this.isStarting()) {
-			return undefined;
-		}
 		const opening = { lost: false };
 		let channel: IDataChannel;
 		try {
+			const resumeId = await this.detachedShell(session);
+			if (!this.isStarting()) {
+				return undefined;
+			}
 			channel = await this.dataChannels.open(
 				{ kind: 'terminal', sessionId: session.id, generation: session.generation, rows: size.rows, columns: size.cols, ...(resumeId ? { resumeId } : {}) },
 				packet => this.consume(packet),
@@ -124,12 +124,18 @@ export class EnginePty extends Disposable implements ITerminalChildProcess {
 					this.finish({ reason: 'lost' });
 				},
 			);
-		} catch {
+		} catch (error) {
 			if (!this.isStarting()) {
 				return undefined;
 			}
 			this.state = 'ended';
-			return { code: 'failed' };
+			switch (engineErrorCategory(error) ?? '') {
+				case 'Declined': return { code: 'declined' };
+				case 'Unanswered': case 'Timeout': return { code: 'unanswered' };
+				case 'NoSession': case 'StaleSession': return { code: 'disconnected' };
+				case 'Unauthorized': return { code: 'notAllowed' };
+				default: return { code: 'failed' };
+			}
 		}
 		if (!this.isStarting()) {
 			channel.close();
@@ -290,14 +296,10 @@ export class EnginePty extends Disposable implements ITerminalChildProcess {
 
 	/** A kept shell this computer left behind on the paired one, if it has one. */
 	private async detachedShell(session: ControllerSession): Promise<string | undefined> {
-		try {
-			const reply = await this.engine.execute({ type: 'remoteTerminalSessions', connectionId: session.id, generation: session.generation });
-			if (reply.type !== 'terminalSessions') {
-				return undefined;
-			}
-			return reply.sessions.find(shell => shell.persistent && !shell.attached)?.id;
-		} catch {
-			return undefined;
+		const reply = await this.engine.execute({ type: 'remoteTerminalSessions', connectionId: session.id, generation: session.generation });
+		if (reply.type !== 'terminalSessions') {
+			throw new Error('Invalid terminal sessions reply');
 		}
+		return reply.sessions.find(shell => shell.persistent && !shell.attached)?.id;
 	}
 }
