@@ -33,7 +33,7 @@ VniLink connects computers you have paired with each other, across macOS, Window
 
 Desktop clipboard sync is unavailable in this version.
 
-Each computer decides what every paired computer may do. The screen, control, files, the terminal, the camera, the microphone, recording and restarting it are separate permissions, and allowing one computer to control another never lets the second control the first.
+Each computer decides what its paired computers may use. Turning on screen sharing allows both viewing and remote input and turns on system audio. You can turn system audio off independently. A viewer can choose a view-only session. Files, Terminal, Camera, recording and system actions have their own sharing settings. Allowing control in one direction never grants control in the other.
 
 ## How it works
 

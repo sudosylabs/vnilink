@@ -149,6 +149,16 @@ suite('EngineSettings', () => {
 			await assert.rejects(settings.update('sharing.clipboard', true), /clipboard sync is unavailable/);
 			assert.strictEqual(policies.sharing.clipboard, false);
 		});
+		test('turning off system audio keeps the screen and input grants after settings reload', async () => {
+			const settings = await createSettings();
+			await settings.update('sharing.screen', true);
+			await settings.update('sharing.systemAudio', false);
+			await settings.refresh();
+			assert.strictEqual(settings.values['sharing.screen'], true);
+			assert.strictEqual(settings.values['sharing.systemAudio'], false);
+			assert.strictEqual(policies.sharing.view, true);
+			assert.strictEqual(policies.sharing.control, true);
+		});
 		test('sharing the screen grants viewing, control and the screen\'s sound, and nothing else', async () => {
 			const settings = await createSettings();
 			await settings.update('sharing.screen', true);
