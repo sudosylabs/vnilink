@@ -381,7 +381,7 @@ export class CameraView extends Disposable implements WorkbenchTab {
 		this.record.setAttribute('aria-pressed', String(recording));
 		this.element.classList.toggle('camera-is-recording', recording);
 		this.recordingBadge.hidden = !recording;
-		this.recordingTime.textContent = formatElapsed(this.recording.elapsedMs);
+		this.recordingTime.textContent = this.recording.statusUnavailable ? nls.localize('recording.statusUnavailable', 'Recording status unavailable') : formatElapsed(this.recording.elapsedMs);
 		describe(this.fit, this.fitted ? nls.localize('camera.fill', 'Fill the Tab') : nls.localize('camera.fit', 'Show the Whole Picture'), this.fitted ? Icons.fillView : Icons.fitToView);
 		describe(this.fullScreenButton, this.fullScreen ? nls.localize('camera.exitFullScreen', 'Exit Full Screen') : nls.localize('camera.fullScreen', 'Full Screen'), this.fullScreen ? Icons.exitFullScreen : Icons.fullScreen);
 	}

@@ -120,6 +120,7 @@ class CameraFixture extends Disposable {
 	public readonly recordings: string[] = [];
 	public recording: RecordingStatus = recordingStatus;
 	public finishOnStop = true;
+	public failNextStatus = false;
 	public readonly released: string[] = [];
 	public readonly saved: { name: string; png: VSBuffer }[] = [];
 	private readonly didSave = this._register(new Emitter<void>());
@@ -150,7 +151,13 @@ class CameraFixture extends Disposable {
 			},
 		});
 		this.instantiationService.stub(INativeRuntimeService, {
-			recordingStatus: () => Promise.resolve(this.recording),
+			recordingStatus: () => {
+				if (this.failNextStatus) {
+					this.failNextStatus = false;
+					return Promise.reject(new Error('Status unavailable'));
+				}
+				return Promise.resolve(this.recording);
+			},
 			stopRecording: () => {
 				if (this.finishOnStop) {
 					this.recording = { ...this.recording, phase: 'Finished' };
@@ -357,6 +364,29 @@ suite('CameraView', () => {
 			assert.strictEqual(record.getAttribute('aria-label'), 'Stop Recording');
 			click(record);
 			await timeout(0);
+		}));
+		test('a failed status poll keeps Stop available and finalizes the same recording', () => runWithFakedTimers({}, async () => {
+			const { record, badge } = await startRecording();
+			fixture.failNextStatus = true;
+			await timeout(1000);
+			assert.strictEqual(badge.textContent, 'Recording status unavailable');
+			assert.strictEqual(record.disabled, false);
+			assert.deepStrictEqual(fixture.released, []);
+			click(record);
+			await timeout(0);
+			assert.deepStrictEqual(fixture.released, ['1']);
+		}));
+		test('a failed finalization poll keeps ownership until the file is finished', () => runWithFakedTimers({}, async () => {
+			const { record, badge } = await startRecording();
+			fixture.finishOnStop = false;
+			fixture.failNextStatus = true;
+			click(record);
+			await timeout(200);
+			assert.strictEqual(badge.hidden, false);
+			assert.deepStrictEqual(fixture.released, []);
+			fixture.recording = { ...recordingStatus, phase: 'Finished' };
+			await timeout(1000);
+			assert.deepStrictEqual(fixture.released, ['1']);
 		}));
 		test('two quick presses start one recording', () => runWithFakedTimers({}, async () => {
 			const view = await fixture.play();

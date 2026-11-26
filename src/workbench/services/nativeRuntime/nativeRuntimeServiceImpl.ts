@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // ---------------------------------------------------------------------------------------------
 
+import { Disposable } from '../../../base/common/lifecycle.js';
 import { InstantiationType, registerSingleton } from '../../../platform/instantiation/common/extensions.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 import { IEngineService } from '../../../platform/engine/common/engineService.js';
@@ -13,15 +14,27 @@ import { IRecordingService } from '../../../platform/recording/common/recording.
 import type { NativeDevice, PowerStatus, EngineCommand, RecordingStatus } from '../../../platform/engine/common/engine.js';
 import { INativeRuntimeService, type RecordingOptions, type RecordingTarget } from './nativeRuntimeService.js';
 /** Native backend facts and explicitly requested media operations. Peer grants remain separate. */
-export class NativeRuntimeService implements INativeRuntimeService {
+export class NativeRuntimeService extends Disposable implements INativeRuntimeService {
 	declare public readonly _serviceBrand: undefined;
+	private epoch = 0;
+
+	public get generation(): number {
+		return this.epoch;
+	}
 
 	constructor(
 		@IEngineService private readonly engine: IEngineService,
 		@INativeHostService private readonly nativeHostService: INativeHostService,
 		@IRecordingService private readonly recordingService: IRecordingService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-	) { }
+	) {
+		super();
+		this._register(engine.onDidChangeAvailability(available => {
+			if (!available) {
+				this.epoch++;
+			}
+		}));
+	}
 
 	public get available(): boolean {
 		return this.engine.available;

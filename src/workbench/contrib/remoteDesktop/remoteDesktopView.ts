@@ -511,7 +511,7 @@ export class RemoteDesktopView extends Disposable implements WorkbenchTab {
 			display: this.control && this.displays.length > 1 && shownIndex >= 0 ? displayLabel(this.displays[shownIndex], shownIndex, false) : undefined,
 			sound: this.soundModel(),
 			privacy: this.control && this.phase === 'live' ? this.privacy : undefined,
-			recording: this.recording.recording ? formatElapsed(this.recording.elapsedMs) : undefined,
+			recording: this.recording.recording ? this.recording.statusUnavailable ? nls.localize('recording.statusUnavailable', 'Recording status unavailable') : formatElapsed(this.recording.elapsedMs) : undefined,
 			fullScreen: this.fullScreen,
 		});
 	}
