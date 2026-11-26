@@ -110,6 +110,7 @@ export class TestCommandService implements ICommandService {
  * and open the real pairing popover. Disposing removes everything it showed.
  */
 export class DevicePageFixture extends Disposable implements IDeviceService {
+	public hosting = true;
 	declare public readonly _serviceBrand: undefined;
 	public readonly available = true;
 	public state: 'loading' | 'ready' | 'unavailable' = 'ready';

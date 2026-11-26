@@ -62,6 +62,9 @@ export class DevicePairingService extends Disposable implements IDevicePairingSe
 	public createInvitation(): Promise<void> {
 		return this.run(async revision => {
 			this.preview = undefined;
+			if (!this.devices.hosting) {
+				throw new Error(nls.localize('devices.hostToInvite', 'To invite another computer, turn on incoming connections in Settings. You can open its invitation here.'));
+			}
 			const file = await this.devices.exportPairingFile();
 			if (!this.isCurrent(revision)) {
 				return;

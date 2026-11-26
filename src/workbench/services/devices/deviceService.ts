@@ -39,6 +39,8 @@ export const IDeviceService = createDecorator<IDeviceService>('deviceService');
 export interface IDeviceService {
 	readonly _serviceBrand: undefined;
 	readonly available: boolean;
+	/** Whether this installation currently accepts incoming connections. */
+	readonly hosting: boolean;
 	readonly state: 'loading' | 'ready' | 'unavailable';
 	readonly onDidChangeState: Event<void>;
 	readonly devices: readonly DeviceSummary[];
