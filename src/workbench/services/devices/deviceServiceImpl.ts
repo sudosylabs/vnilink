@@ -227,6 +227,9 @@ export class DeviceService extends Disposable implements IDeviceService {
 		}
 		// A wait whose end was missed would show forever; the next ask says so again.
 		if (batch.resync) {
+			for (const device of this.current) {
+				this.availabilityChanged.fire(device.id);
+			}
 			for (const id of [...this.awaiting]) {
 				this.setAwaiting(id, false);
 			}

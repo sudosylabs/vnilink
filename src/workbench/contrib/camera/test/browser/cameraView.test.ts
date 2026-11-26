@@ -120,6 +120,14 @@ class CameraFixture extends Disposable {
 	public readonly recordings: string[] = [];
 	public recording: RecordingStatus = recordingStatus;
 	public finishOnStop = true;
+	private readonly availability = this._register(new Emitter<string>());
+	private allowed = true;
+
+	public setConsent(allowed: boolean): void {
+		this.allowed = allowed;
+		this.availability.fire(device.id);
+	}
+
 	public failNextStatus = false;
 	public readonly released: string[] = [];
 	public readonly saved: { name: string; png: VSBuffer }[] = [];
@@ -143,6 +151,10 @@ class CameraFixture extends Disposable {
 		const devices = this._register(new TestDeviceService());
 		devices.devices = [device];
 		this.instantiationService.stub(IDeviceService, devices);
+		this.instantiationService.stub(IDeviceService, 'onDidChangeAvailability', this.availability.event);
+		this.instantiationService.stub(IDeviceService, 'availability', () => Promise.resolve([
+			{ capability: 'recording', status: this.allowed ? 'available' : 'turnedOff' }
+		]));
 		this.instantiationService.stub(IRecordingService, {
 			savePicture: (name: string, png: VSBuffer) => {
 				this.saved.push({ name, png });
@@ -337,6 +349,16 @@ suite('CameraView', () => {
 		document.body.dispatchEvent(new ClipboardEvent('copy', { bubbles: true, cancelable: true }));
 		await copied;
 		assert.strictEqual(fixture.copied.length, 1);
+	});
+	test('withdrawing and restoring recording consent updates the open camera without closing its stream', async () => {
+		const view = await fixture.play();
+		const record = control(view, 'camera-record');
+		fixture.setConsent(false);
+		await until(() => record.disabled, 'Record stayed enabled after withdrawal');
+		fixture.setConsent(true);
+		await until(() => !record.disabled, 'Record stayed disabled after consent');
+		assert.strictEqual(fixture.streams.length, 1);
+		assert.strictEqual(fixture.streams[0].disposed, false);
 	});
 	test('Record is offered where the computer allows it', async () => {
 		const view = await fixture.play();
