@@ -770,11 +770,15 @@ impl DataChannel {
     #[napi]
     pub fn file_operation(&self, command: String) -> Result<AsyncTask<FileTask>> {
         self.check()?;
-        if self.kind != ChannelKind::Files || command.len() > 16384 {
+        // A selection carries up to 50,000 names; other operations are short control messages.
+        if self.kind != ChannelKind::Files || command.len() > 32 * 1024 * 1024 {
             return Err(Error::from_reason("Invalid file operation"));
         }
         let operation: FileOperation = serde_json::from_str(&command)
             .map_err(|_| Error::from_reason("Invalid file operation"))?;
+        if command.len() > 16384 && !matches!(operation, FileOperation::Submit { .. }) {
+            return Err(Error::from_reason("Invalid file operation"));
+        }
         Ok(AsyncTask::new(FileTask {
             core: self.core.clone(),
             session: self.session_id,

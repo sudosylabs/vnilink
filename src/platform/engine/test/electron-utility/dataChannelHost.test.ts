@@ -275,6 +275,36 @@ suite('DataChannelHost', () => {
 	});
 	suite('files', () => {
 		const listing = JSON.stringify({ ok: { entries: [], total: '0', nextOffset: null, truncated: false, skipped: '0' } });
+		for (const direction of ['upload', 'download']) {
+			test(direction + ' submits a large multilingual selection as one job and keeps the channel', async () => {
+				const { host, native, messages, receive } = channel('files');
+				const names = Array.from({ length: 700 }, (_, i) => '旅行-invoice-November-' + String(i) + '.pdf');
+				const operation = { type: 'submit', direction, srcRoot: '1', srcPath: '', dstRoot: '2', dstPath: '', names };
+				const commands: string[] = [];
+				native.fileOperation = command => {
+					commands.push(command);
+					return Promise.resolve('{"ok":null}');
+				};
+				host.start(native);
+				receive({ type: 'file', id: 1, operation });
+				receive({ type: 'file', id: 2, operation: { type: 'jobs' } });
+				await timeout(0);
+				assert.deepStrictEqual(commands.map(command => JSON.parse(command) as unknown), [operation, { type: 'jobs' }]);
+				assert.deepStrictEqual(messages.filter(message => message.type === 'fileReply').map(message => message.id), [1, 2]);
+				assert.strictEqual(native.closed, 0);
+			});
+		}
+		test('a large job snapshot is sent a page per acknowledgement', () => {
+			const { host, native, sent, receive } = channel('files');
+			const metadata = JSON.stringify({ jobs: ['a'.repeat(20000)] });
+			native.packets.push({ kind: 'jobs', metadata });
+			host.start(native);
+			assert.deepStrictEqual(sent().map(message => message.kind), ['jobPart']);
+			receive({ type: 'ack', sequence: 1 });
+			assert.deepStrictEqual(sent().map(message => message.kind), ['jobPart', 'jobEnd']);
+			assert.strictEqual(sent().map(message => message.metadata).join(''), metadata);
+			assert.strictEqual(native.closed, 0);
+		});
 		test('a slow file operation holds up neither the operations after it nor their answers', async () => {
 			const { host, native, messages, receive } = channel('files');
 			const slowListing = new DeferredPromise<string>();

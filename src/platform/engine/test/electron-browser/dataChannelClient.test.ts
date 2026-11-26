@@ -223,6 +223,21 @@ suite('DataChannelClient', () => {
 			assert.deepStrictEqual(await client.fileOperation({ type: 'rename', root: '0', path: 'Users', name: 'a.txt', token: null, newName: 'b.txt' }), { error: 'FileExists: the name is taken' });
 			assert.deepStrictEqual(errors, []);
 		});
+		test('paged job metadata reaches Files intact and leaves the channel usable', async () => {
+			const delivered: DataPacket[] = [];
+			const { client, host } = createChannel(packet => {
+				delivered.push(packet);
+			});
+			const part = 'x'.repeat(16384);
+			host.post(dataMessage(1, 'jobPart', { metadata: part }));
+			await host.next(message => message.type === 'ack' && message.sequence === 1);
+			assert.strictEqual(delivered.length, 0);
+			host.post(dataMessage(2, 'jobEnd', { metadata: 'last' }));
+			await host.next(message => message.type === 'ack' && message.sequence === 2);
+			assert.deepStrictEqual(delivered.map(packet => [packet.kind, packet.metadata]), [['jobs', part + 'last']]);
+			client.close();
+			assert.deepStrictEqual(errors, []);
+		});
 		test('a job change arrives as a packet nobody asked for', async () => {
 			const consumed = new DeferredPromise<DataPacket>();
 			const { host } = createChannel(packet => {

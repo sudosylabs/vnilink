@@ -23,6 +23,8 @@ export class DataChannelClient implements IDataChannel {
 	private inputFlight = false;
 	private pointerTimer: ReturnType<typeof setTimeout> | undefined;
 	private expectedSequence = 1;
+	private jobParts: string[] = [];
+	private jobUnits = 0;
 	/** The packet being consumed: the next waits for it, so packets are consumed in order. */
 	private consuming: Promise<void> = Promise.resolve();
 	private lastHeard = performance.now();
@@ -237,7 +239,22 @@ export class DataChannelClient implements IDataChannel {
 				if (this.closed) {
 					return;
 				}
-				await this.consume(message);
+				if (message.kind === 'jobPart' || message.kind === 'jobEnd') {
+					this.jobUnits += message.metadata.length;
+					// One snapshot can describe every entry in a 50,000-name transfer.
+					if (this.jobUnits > 32 * 1024 * 1024) {
+						throw new Error('Invalid job update size');
+					}
+					this.jobParts.push(message.metadata);
+					if (message.kind === 'jobEnd') {
+						const metadata = this.jobParts.join('');
+						this.jobParts = [];
+						this.jobUnits = 0;
+						await this.consume({ ...message, kind: 'jobs', metadata });
+					}
+				} else {
+					await this.consume(message);
+				}
 			} finally {
 				done();
 			}
@@ -385,6 +402,8 @@ export class DataChannelClient implements IDataChannel {
 			return;
 		}
 		this.closed = true;
+		this.jobParts = [];
+		this.jobUnits = 0;
 		clearInterval(this.heartbeat);
 		this._onCursor.dispose();
 		if (this.audioPending) {
