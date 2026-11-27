@@ -120,6 +120,15 @@ class CameraFixture extends Disposable {
 	public readonly recordings: string[] = [];
 	public recording: RecordingStatus = recordingStatus;
 	public finishOnStop = true;
+	private readonly availability = this._register(new Emitter<string>());
+	private allowed = true;
+
+	public setConsent(allowed: boolean): void {
+		this.allowed = allowed;
+		this.availability.fire(device.id);
+	}
+
+	public failNextStatus = false;
 	public readonly released: string[] = [];
 	public readonly saved: { name: string; png: VSBuffer }[] = [];
 	private readonly didSave = this._register(new Emitter<void>());
@@ -142,6 +151,10 @@ class CameraFixture extends Disposable {
 		const devices = this._register(new TestDeviceService());
 		devices.devices = [device];
 		this.instantiationService.stub(IDeviceService, devices);
+		this.instantiationService.stub(IDeviceService, 'onDidChangeAvailability', this.availability.event);
+		this.instantiationService.stub(IDeviceService, 'availability', () => Promise.resolve([
+			{ capability: 'recording', status: this.allowed ? 'available' : 'turnedOff' }
+		]));
 		this.instantiationService.stub(IRecordingService, {
 			savePicture: (name: string, png: VSBuffer) => {
 				this.saved.push({ name, png });
@@ -150,7 +163,13 @@ class CameraFixture extends Disposable {
 			},
 		});
 		this.instantiationService.stub(INativeRuntimeService, {
-			recordingStatus: () => Promise.resolve(this.recording),
+			recordingStatus: () => {
+				if (this.failNextStatus) {
+					this.failNextStatus = false;
+					return Promise.reject(new Error('Status unavailable'));
+				}
+				return Promise.resolve(this.recording);
+			},
 			stopRecording: () => {
 				if (this.finishOnStop) {
 					this.recording = { ...this.recording, phase: 'Finished' };
@@ -331,6 +350,16 @@ suite('CameraView', () => {
 		await copied;
 		assert.strictEqual(fixture.copied.length, 1);
 	});
+	test('withdrawing and restoring recording consent updates the open camera without closing its stream', async () => {
+		const view = await fixture.play();
+		const record = control(view, 'camera-record');
+		fixture.setConsent(false);
+		await until(() => record.disabled, 'Record stayed enabled after withdrawal');
+		fixture.setConsent(true);
+		await until(() => !record.disabled, 'Record stayed disabled after consent');
+		assert.strictEqual(fixture.streams.length, 1);
+		assert.strictEqual(fixture.streams[0].disposed, false);
+	});
 	test('Record is offered where the computer allows it', async () => {
 		const view = await fixture.play();
 		const record = control(view, 'camera-record');
@@ -357,6 +386,29 @@ suite('CameraView', () => {
 			assert.strictEqual(record.getAttribute('aria-label'), 'Stop Recording');
 			click(record);
 			await timeout(0);
+		}));
+		test('a failed status poll keeps Stop available and finalizes the same recording', () => runWithFakedTimers({}, async () => {
+			const { record, badge } = await startRecording();
+			fixture.failNextStatus = true;
+			await timeout(1000);
+			assert.strictEqual(badge.textContent, 'Recording status unavailable');
+			assert.strictEqual(record.disabled, false);
+			assert.deepStrictEqual(fixture.released, []);
+			click(record);
+			await timeout(0);
+			assert.deepStrictEqual(fixture.released, ['1']);
+		}));
+		test('a failed finalization poll keeps ownership until the file is finished', () => runWithFakedTimers({}, async () => {
+			const { record, badge } = await startRecording();
+			fixture.finishOnStop = false;
+			fixture.failNextStatus = true;
+			click(record);
+			await timeout(200);
+			assert.strictEqual(badge.hidden, false);
+			assert.deepStrictEqual(fixture.released, []);
+			fixture.recording = { ...recordingStatus, phase: 'Finished' };
+			await timeout(1000);
+			assert.deepStrictEqual(fixture.released, ['1']);
 		}));
 		test('two quick presses start one recording', () => runWithFakedTimers({}, async () => {
 			const view = await fixture.play();

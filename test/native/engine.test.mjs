@@ -212,6 +212,31 @@ suite('a temporary engine', { timeout: 30000 }, () => {
 	});
 });
 
+test('a control-only computer opens a reachable host invitation and the host confirms the pairing', { timeout: 30000 }, async () => {
+	const host = await addon.openTemporaryEngine();
+	const controller = await addon.openTemporaryEngine();
+	try {
+		await execute(host, { type: 'startHosting' });
+		const { subscriptionId } = await execute(controller, { type: 'subscribeEvents' });
+		const { file } = await execute(host, { type: 'exportPairingFile', ttlSeconds: 60, allowControl: true });
+		const { preview } = await execute(controller, { type: 'openPairingFile', bytes: file.bytes });
+		await execute(controller, { type: 'confirmPairing', previewId: preview.id, digits: file.check });
+		await execute(controller, { type: 'beginConnectServices', endpointId: preview.endpoint_id });
+		let digits;
+		await waitFor(async () => {
+			const { events } = await execute(controller, { type: 'pollEvents', subscriptionId, maxEvents: 256 });
+			digits = events.find(event => event.type === 'controlCheck')?.check;
+			return !!digits;
+		}, 'control confirmation digits');
+		await execute(host, { type: 'confirmControlRequest', digits });
+		await waitFor(async () => (await execute(controller, { type: 'snapshot' })).snapshot.devices[0]?.presence === 'connected', 'accepted controller');
+		assert.equal((await execute(controller, { type: 'snapshot' })).snapshot.hosting, false);
+		assert.equal((await execute(host, { type: 'snapshot' })).snapshot.devices.length, 1);
+	} finally {
+		await Promise.all([controller, host].map(engine => execute(engine, { type: 'shutdown' })));
+	}
+});
+
 test('this computer\'s disk lists, makes, renames and deletes through its own engine', { timeout: 30000 }, async () => {
 	const engine = await addon.openTemporaryEngine();
 	// The native form: on Windows it also spells out short (8.3) names, as the

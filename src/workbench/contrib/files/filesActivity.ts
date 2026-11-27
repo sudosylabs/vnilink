@@ -140,7 +140,8 @@ export class FilesActivity extends Disposable {
 	private readonly title: HTMLElement;
 	private readonly entries: HTMLElement;
 	private readonly clear: HTMLButtonElement;
-	private readonly entryListeners = this._register(new DisposableStore());
+	private readonly rows = new Map<string, { item: HTMLElement; mark: HTMLElement; name: HTMLElement; detail: HTMLElement }>();
+	private groups: readonly string[][] = [];
 	private readonly sessionListeners = this._register(new DisposableStore());
 	private readonly samples = new Map<string, Sample>();
 	/** When each transfer was first seen complete, for its tint. */
@@ -172,6 +173,13 @@ export class FilesActivity extends Disposable {
 		const close = append(header, $<HTMLButtonElement>('button.files-icon-button', { type: 'button', title: nls.localize('files.closeTransfers', 'Close'), 'aria-label': nls.localize('files.closeTransfers', 'Close') }));
 		append(close, renderIcon(Icons.close));
 		this.entries = append(this.list, $('.files-activity-entries'));
+		this._register(addDisposableListener(this.entries, EventType.CLICK, event => {
+			const row = event.target instanceof Element ? event.target.closest('button')?.closest<HTMLElement>('[data-job]') : undefined;
+			const job = this.session?.jobs.find(candidate => candidate.id === row?.dataset.job);
+			if (job) {
+				this.listAction(job)?.run();
+			}
+		}));
 		this._register(addDisposableListener(this.summary, EventType.CLICK, () => {
 			this.setOpen(this.list.hidden === true);
 		}));
@@ -374,44 +382,66 @@ export class FilesActivity extends Disposable {
 		this.title.textContent = nls.localize('files.activityTitle', 'Transfers with {0}', remote.computer);
 		this.list.setAttribute('aria-label', this.title.textContent);
 		this.clear.disabled = !jobs.some(job => job.state === 'Complete' || job.state === 'Cancelled' || job.state === 'Failed');
-		this.entryListeners.clear();
-		this.entries.replaceChildren();
-		const now = jobs.filter(job => isUnfinished(job) || job.state === 'Interrupted');
-		const earlier = jobs.filter(job => !now.includes(job));
-		if (!jobs.length) {
-			append(this.entries, $('p.files-activity-empty', undefined, nls.localize('files.noTransfers', 'Nothing has been copied yet.')));
-		}
-		for (const [label, group] of [[nls.localize('files.now', 'Now'), now], [nls.localize('files.earlier', 'Earlier'), earlier]] as const) {
-			if (!group.length) {
-				continue;
-			}
-			const section = append(this.entries, $('section.files-activity-group'));
-			append(section, $('h3.files-activity-heading', undefined, label));
-			const items = append(section, $('ul.files-activity-items'));
-			items.setAttribute('aria-label', label);
-			for (const job of [...group].reverse()) {
-				const to = job.direction === 'Upload' ? remote : local;
-				const destination = job.destination;
-				const where = destination ? folderOn({ root: destination.root, path: destination.path }, to.places, to.computer) : to.computer;
-				const item = append(items, $('li.files-activity-item'));
-				item.dataset.state = job.state;
-				append(item, renderJobMark(job));
-				const text = append(item, $('span.files-activity-text'));
-				append(text, $('span.files-activity-name', { title: job.label }, job.label));
-				const detail = job.state === 'Complete'
-					? nls.localize('files.inFolder', 'In {0} · {1}', where, jobStatus(job, undefined))
-					: nls.localize('files.toFolder', 'To {0} · {1}', where, jobStatus(job, this.samples.get(job.id)?.rate));
-				append(text, $('span.files-activity-detail', { title: detail }, detail));
-				const action = this.listAction(job);
-				if (action) {
-					const button = append(item, $<HTMLButtonElement>('button.files-text-button', { type: 'button' }));
-					button.textContent = action.label;
-					button.classList.toggle('primary', action.primary);
-					this.entryListeners.add(addDisposableListener(button, EventType.CLICK, () => {
-						action.run();
-					}));
+		const focused = getActiveElement();
+		const focusedJob = focused?.closest<HTMLElement>('[data-job]')?.dataset.job;
+		const now = jobs.filter(job => isUnfinished(job) || job.state === 'Interrupted').reverse();
+		const earlier = jobs.filter(job => !isUnfinished(job) && job.state !== 'Interrupted').reverse();
+		const groups = [now, earlier].map(group => group.map(job => job.id));
+		if (groups.some((group, i) => group.length !== this.groups[i]?.length || group.some((id, j) => id !== this.groups[i][j]))) {
+			this.entries.replaceChildren();
+			this.rows.clear();
+			this.groups = groups;
+			for (const [label, group] of [[nls.localize('files.now', 'Now'), now], [nls.localize('files.earlier', 'Earlier'), earlier]] as const) {
+				if (!group.length) {
+					continue;
+				}
+				const section = append(this.entries, $('section.files-activity-group'));
+				append(section, $('h3.files-activity-heading', undefined, label));
+				const items = append(section, $('ul.files-activity-items', { 'aria-label': label }));
+				for (const job of group) {
+					const item = append(items, $('li.files-activity-item', { 'data-job': job.id }));
+					const mark = append(item, renderJobMark(job));
+					const text = append(item, $('span.files-activity-text'));
+					const name = append(text, $('span.files-activity-name'));
+					const detail = append(text, $('span.files-activity-detail'));
+					this.rows.set(job.id, { item, mark, name, detail });
 				}
 			}
+			if (!jobs.length) {
+				append(this.entries, $('p.files-activity-empty', undefined, nls.localize('files.noTransfers', 'Nothing has been copied yet.')));
+			}
+		}
+		for (const job of jobs) {
+			const row = this.rows.get(job.id);
+			if (!row) {
+				continue;
+			}
+			const to = job.direction === 'Upload' ? remote : local;
+			const where = job.destination ? folderOn({ root: job.destination.root, path: job.destination.path }, to.places, to.computer) : to.computer;
+			const detail = job.state === 'Complete'
+				? nls.localize('files.inFolder', 'In {0} · {1}', where, jobStatus(job, undefined))
+				: nls.localize('files.toFolder', 'To {0} · {1}', where, jobStatus(job, this.samples.get(job.id)?.rate));
+			const { item } = row;
+			item.dataset.state = job.state;
+			const mark = renderJobMark(job);
+			row.mark.replaceWith(mark);
+			row.mark = mark;
+			row.name.textContent = job.label;
+			row.name.title = job.label;
+			row.detail.textContent = detail;
+			row.detail.title = detail;
+			const action = this.listAction(job);
+			const existing = item.querySelector('button');
+			if (action) {
+				const button = existing ?? append(item, $<HTMLButtonElement>('button.files-text-button', { type: 'button' }));
+				button.textContent = action.label;
+				button.classList.toggle('primary', action.primary);
+			} else {
+				existing?.remove();
+			}
+		}
+		if (focusedJob && !focused.isConnected) {
+			(this.rows.get(focusedJob)?.item.querySelector('button') ?? this.list).focus();
 		}
 	}
 
@@ -459,7 +489,10 @@ export class FilesActivity extends Disposable {
 			type: 'warning',
 			message: nls.localize('files.conflict', '{0} already has “{1}”', where, file),
 			detail: nls.localize('files.conflictDetail', 'Keep Both names the copy with a number. Replace keeps the file there until the new one has fully arrived.'),
-			buttons: [nls.localize('files.skip', 'Skip'), nls.localize('files.replace', 'Replace'), nls.localize('files.keepBoth', 'Keep Both'), nls.localize('files.cancel', 'Cancel')],
+			buttons: [
+				nls.localize('files.skip', 'Skip'), nls.localize('files.replace', 'Replace'),
+				nls.localize('files.keepBoth', 'Keep Both'), nls.localize('files.cancel', 'Cancel'),
+			],
 			cancelId: 3,
 			checkbox: Number(job.files_total) > 1 ? { label: nls.localize('files.sameForOthers', 'Same answer for the other names that clash') } : undefined,
 		});

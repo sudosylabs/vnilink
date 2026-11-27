@@ -519,6 +519,8 @@ export function validateTerminalLimits(values: Readonly<Record<string, unknown>>
 
 const sharing = (key: string, title: string, description?: string): IStringDictionary<ISettingSchema> => ({ [`sharing.${key}`]: { type: 'boolean', default: false, title, description } });
 
+const microphoneUnavailable = nls.localize('sharing.microphoneHelp', 'Remote microphone listening is unavailable in this version.');
+
 registerSettings('sharing', {
 	id: 'sharing',
 	title: nls.localize('sharing.title', 'Sharing with paired computers'),
@@ -527,10 +529,13 @@ registerSettings('sharing', {
 		...sharing('files', nls.localize('sharing.files', 'Files')),
 		...sharing('terminal', nls.localize('sharing.terminal', 'Terminal')),
 		...sharing('camera', nls.localize('sharing.camera', 'Camera')),
-		...sharing('microphone', nls.localize('sharing.microphone', 'Microphone')),
+		'sharing.microphone': {
+			type: 'boolean', default: false, title: nls.localize('sharing.microphone', 'Microphone'),
+			description: microphoneUnavailable, restrictedReason: microphoneUnavailable,
+		},
 		...sharing('systemAudio', nls.localize('sharing.audio', 'System audio'), nls.localize('sharing.audioHelp', 'Turns on with screen viewing. Turn it off to share the picture without sound.')),
 		...sharing('clipboard', nls.localize('sharing.clipboard', 'Clipboard'), nls.localize('sharing.clipboardHelp', 'Desktop clipboard sync is unavailable in this version.')),
-		...sharing('recording', nls.localize('sharing.recording', 'Record desktop sessions')),
+		...sharing('recording', nls.localize('sharing.recording', 'Allow recording of shared screens and cameras')),
 		...sharing('systemActions', nls.localize('sharing.actions', 'System actions'), nls.localize('sharing.actionsHelp', 'Only the actions turned on under Remote actions.')),
 		...sharing('unattended', nls.localize('sharing.unattended', 'Allow access without asking'), nls.localize('sharing.unattendedHelp', 'Paired computers use what’s shared without anyone here accepting them. When off, this computer asks each time one starts.')),
 	},

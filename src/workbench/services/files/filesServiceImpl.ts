@@ -215,15 +215,16 @@ class FilesSession extends Disposable implements IFilesSession {
 	/** Attaches the open channel, carries on with what a lost one left interrupted, and reads its jobs. */
 	public async attach(channel: FilesChannel): Promise<void> {
 		this.channel = channel;
+		let recovery: unknown;
 		try {
-			await this.ask({ type: 'adopt' });
+			recovery = await this.ask({ type: 'adopt' });
 		} catch {
 			// A transfer that cannot be taken over yet stays stopped, with Resume offered where it lands.
 		}
 		const jobs = await this.ask({ type: 'jobs' });
 		if (isFileJobs(jobs)) {
 			this.byId.clear();
-			for (const job of jobs) {
+			for (const job of [...(isFileJobs(recovery) ? recovery : []), ...jobs]) {
 				this.byId.set(job.id, job);
 			}
 			this.jobsChanged.fire();

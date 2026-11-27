@@ -181,7 +181,9 @@ export class DevicesPage extends Disposable implements IHomePage {
 	private updatePairingEnablement(): void {
 		const enabled = this.contextKeyService.contextMatchesRules(EngineAvailableContext);
 		for (const button of this.pairingButtons) {
-			button.disabled = !enabled;
+			const needsHosting = !this.importButtons.includes(button) && !this.devices.hosting;
+			button.disabled = !enabled || needsHosting;
+			button.title = needsHosting ? nls.localize('devices.inviteDisabled', 'Turn on incoming connections in Settings to invite another computer.') : '';
 		}
 	}
 
@@ -193,13 +195,15 @@ export class DevicesPage extends Disposable implements IHomePage {
 	}
 
 	private render(): void {
+		this.updatePairingEnablement();
 		const state = this.devices.state;
 		this.emptyTitle.textContent = state === 'loading' ? nls.localize('devices.loading', 'Loading computers…')
 			: state === 'unavailable' ? nls.localize('devices.unavailable', 'Devices unavailable')
 				: nls.localize('devices.emptyTitle', 'Bring your computers together');
 		this.emptyHelp.textContent = state === 'unavailable' ? nls.localize('devices.unavailableHelp', 'Unable to read devices from the connection engine. Restart VniLink to try again.')
 			: state === 'loading' ? ''
-				: nls.localize('devices.emptyHelp', 'Pair this computer with another to see it here. One of them makes an invitation; the other opens it.');
+				: !this.devices.hosting ? nls.localize('devices.openFromHost', 'Open an invitation from the computer you want to reach.')
+					: nls.localize('devices.emptyHelp', 'Pair this computer with another to see it here. One of them makes an invitation; the other opens it.');
 		const known = this.devices.devices;
 		const selected = known.find(device => device.id === this.selectedId);
 		const lostFocus = !!this.selectedId && !selected && this.details.element.contains(document.activeElement);

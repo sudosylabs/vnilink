@@ -41,6 +41,8 @@ function exitCodeLabel(code: number): string {
 
 function launchMessage(name: string, failure: TerminalLaunchFailure): string {
 	switch (failure) {
+		case 'declined': return nls.localize('terminal.declined', '{0} declined the Terminal request.', name);
+		case 'unanswered': return nls.localize('terminal.unanswered', 'No one answered the Terminal request on {0}.', name);
 		case 'disconnected': return nls.localize('terminal.disconnected', '{0} isn\'t connected.', name);
 		case 'notAllowed': return nls.localize('terminal.notAllowed', '{0} doesn\'t allow Terminal for this computer.', name);
 		case 'unsupported': return nls.localize('terminal.unsupported', '{0} can\'t open a terminal.', name);

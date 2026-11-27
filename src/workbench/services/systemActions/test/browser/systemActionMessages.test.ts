@@ -6,9 +6,12 @@
 // ---------------------------------------------------------------------------------------------
 
 import assert from 'assert';
+import { timeout } from '../../../../../base/common/async.js';
+import { runWithFakedTimers } from '../../../../../base/test/common/virtualScheduling/index.js';
+import { TestEngineService } from '../../../../../platform/engine/test/common/testEngineService.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import type { SystemOperation } from '../../../../../platform/engine/common/engine.js';
-import { systemActionMessage, systemRequestMessage } from '../../systemActionServiceImpl.js';
+import { SystemActionService, systemActionMessage, systemRequestMessage } from '../../systemActionServiceImpl.js';
 
 type Outcome = Pick<SystemOperation, 'action' | 'state' | 'detail' | 'noticeRemainingMs'>;
 
@@ -38,7 +41,22 @@ const failures: readonly (readonly [string, string])[] = [
 ];
 
 suite('System action messages', () => {
-	ensureNoDisposablesAreLeakedInTestSuite();
+	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
+	test('losing status in the last two seconds leaves the outcome unconfirmed', () => runWithFakedTimers({}, async () => {
+		const engine = disposables.add(new TestEngineService(command => {
+			if (command.type === 'controllerSessions') {
+				return { type: 'sessions', sessions: [{ id: '1', generation: '2', role: 'Controller', peer_id: 'peer', phase: 'Active' }] };
+			}
+			if (command.type === 'systemAction') {
+				return { type: 'systemOperation', operation: { id: '3', action: 'restart', state: 'scheduled', detail: '', noticeRemainingMs: 1800 } };
+			}
+			throw new Error('Connection lost');
+		}));
+		const service = disposables.add(new SystemActionService(engine));
+		await service.run('peer', 'restart');
+		await timeout(1001);
+		assert.strictEqual(service.progress('peer')?.message, 'Couldn’t confirm whether the action ran');
+	}));
 	for (const [operation, message] of outcomes) {
 		test(`a ${operation.action} ${operation.state}${operation.detail ? ` (${operation.detail})` : ''} reads '${message}'`, () => {
 			assert.strictEqual(systemActionMessage(operation), message);

@@ -316,6 +316,12 @@ suite('DevicesPage', () => {
 		test('a device list does not show the empty page\'s choices', () => {
 			assert.strictEqual(shown(page.querySelector('.device-pairing-choices')), false);
 		});
+		test('a control-only computer offers opening an invitation and explains how to enable inviting', () => {
+			fixture.hosting = false;
+			fixture.update(fixture.devices);
+			assert.deepStrictEqual(heading().map(button => button.disabled), [true, false]);
+			assert.match(heading()[0].title, /incoming connections/);
+		});
 		test('each heading button runs its command from itself', () => {
 			const [create, open] = heading();
 			click(create);

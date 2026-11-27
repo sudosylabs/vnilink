@@ -57,6 +57,8 @@ const POLL_MS = 4;
 const WOKEN_POLL_MS = 250;
 
 export class DataChannelHost {
+	/** A job with many destination names spans several acknowledged packets. */
+	private jobText = '';
 	private closed = false;
 	private native: NativeDataChannel | undefined;
 	private timer: ReturnType<typeof setTimeout> | undefined;
@@ -230,8 +232,10 @@ export class DataChannelHost {
 				Number.isSafeInteger(message.id)
 			) {
 				const command = JSON.stringify(message.operation);
-				if (command.length > 16384) {
-					throw new Error('File operation too large');
+				const limit = message.operation.type === 'submit' ? 32 * 1024 * 1024 : 16384;
+				if (Buffer.byteLength(command) > limit) {
+					this.port.postMessage({ type: 'fileReply', id: message.id, metadata: JSON.stringify({ error: 'InvalidSetting: the file selection is too large' }) });
+					return;
 				}
 				this.fileFlight++;
 				// A refused operation is an answer; only a lost session rejects.
@@ -264,6 +268,20 @@ export class DataChannelHost {
 		}
 	}
 
+	/** File job pages use the same one-packet acknowledgement window as other Files events. */
+	private nextPacket(native: NativeDataChannel): ReturnType<NativeDataChannel['read']> {
+		if (!this.jobText) {
+			const packet = native.read();
+			if (packet?.kind !== 'jobs' || packet.metadata.length <= 16384) {
+				return packet;
+			}
+			this.jobText = packet.metadata;
+		}
+		const metadata = this.jobText.slice(0, 16384);
+		this.jobText = this.jobText.slice(metadata.length);
+		return { kind: this.jobText ? 'jobPart' : 'jobEnd', metadata };
+	}
+
 	/** Reads packets until the renderer holds as many as it may, or none is ready. */
 	private pump(): void {
 		if (this.closed || this.ended || !this.native || this.request.kind === 'input') {
@@ -276,7 +294,7 @@ export class DataChannelHost {
 		const window = this.request.kind === 'video' ? VIDEO_WINDOW : 1;
 		try {
 			while (this.sequence - this.acknowledged < window && !this.ended) {
-				const packet = this.native.read();
+				const packet = this.nextPacket(this.native);
 				if (!packet) {
 					// Nothing ready: look again shortly, unless the engine says when; an
 					// acknowledgement also looks.
@@ -342,6 +360,7 @@ export class DataChannelHost {
 			return;
 		}
 		this.closed = true;
+		this.jobText = '';
 		if (this.timer) {
 			clearTimeout(this.timer);
 		}

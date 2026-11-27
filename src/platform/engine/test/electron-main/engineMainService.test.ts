@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------------------------
 
 import assert from 'assert';
+import { CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { timeout } from '../../../../base/common/async.js';
 import { Emitter, type Event } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
@@ -222,6 +223,39 @@ suite('EngineMainService', () => {
 		await timeout(60_000);
 		assert.strictEqual(forks.length, 1);
 		assert.strictEqual(service.isRestarting, false);
+	}));
+	test('approval after twelve seconds still dispatches once and returns the operation', () => runWithFakedTimers({}, async () => {
+		const service = await startService();
+		answers.push(async () => {
+			await timeout(12000);
+			return { type: 'done' };
+		});
+		answers.push(() => {
+			story.push('dispatched');
+			return Promise.resolve({ type: 'done' });
+		});
+		await service.execute({ type: 'systemAction', sessionId: '4', generation: '2', action: 'lock' });
+		assert.deepStrictEqual(story, ['dispatched']);
+		await service.stop();
+	}));
+	test('closing the caller during admission prevents a late approval dispatching', () => runWithFakedTimers({}, async () => {
+		const service = await startService();
+		const caller = disposables.add(new CancellationTokenSource());
+		answers.push(async () => {
+			await timeout(12000);
+			return { type: 'done' };
+		});
+		answers.push(() => {
+			story.push('dispatched');
+			return Promise.resolve({ type: 'done' });
+		});
+		const pending = assert.rejects(service.execute({ type: 'systemAction', sessionId: '4', generation: '2', action: 'lock' }, caller.token));
+		await timeout(1000);
+		caller.cancel();
+		await pending;
+		assert.deepStrictEqual(story, []);
+		answers.length = 0;
+		await service.stop();
 	}));
 	test('a command that does not answer in time fails and says its outcome is unknown', () => runWithFakedTimers({}, async () => {
 		const service = await startService();

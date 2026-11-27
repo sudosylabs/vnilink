@@ -311,7 +311,8 @@ suite('EngineHost', () => {
 		});
 		test('a command that begins a use of another computer asks to be admitted first', async () => {
 			const host = await openHost();
-			const reply = host.execute({ type: 'remoteTerminalSessions', connectionId: '4', generation: '2' });
+			const command = { type: 'remoteTerminalSessions', connectionId: '4', generation: '2' };
+			const reply = host.admitCommand(command).then(() => host.execute(command));
 			await settled();
 			assert.deepStrictEqual(native.steps, ['admit Terminal'], 'nothing runs before the answer');
 			native.admissions[0].answer();
@@ -327,7 +328,8 @@ suite('EngineHost', () => {
 		});
 		test('a refused admission fails its command, which never runs', async () => {
 			const host = await openHost();
-			const reply = host.execute({ type: 'systemAction', sessionId: '4', generation: '2', action: 'lock' });
+			const command = { type: 'systemAction', sessionId: '4', generation: '2', action: 'lock' };
+			const reply = host.admitCommand(command).then(() => host.execute(command));
 			await settled();
 			native.admissions[0].answer(new Error('Declined: the other computer\'s owner declined'));
 			await assert.rejects(reply, /^Error: Declined: /);

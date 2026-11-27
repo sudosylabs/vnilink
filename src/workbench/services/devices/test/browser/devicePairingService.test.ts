@@ -67,6 +67,17 @@ suite('DevicePairingService', () => {
 		devices = disposables.add(new TestDeviceService());
 	});
 	suite('invitation', () => {
+		test('a control-only computer explains how to pair without exporting a file', () => withService(async service => {
+			devices.hosting = false;
+			let exports = 0;
+			devices.exportPairingFile = () => {
+				exports++;
+				throw new Error('Unexpected export');
+			};
+			await service.createInvitation();
+			assert.strictEqual(exports, 0);
+			assert.match(service.state.message, /open its invitation/);
+		}));
 		test('a new invitation shows its check digits once it is ready', () => withService(async service => {
 			await service.createInvitation();
 			assert.strictEqual(step(service, 'invitation').file.check, '042517');

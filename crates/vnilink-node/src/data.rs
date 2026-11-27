@@ -172,6 +172,7 @@ pub struct DataChannel {
     owner: Option<(u64, u64)>,
     files: Mutex<Option<Arc<vnilink_app::FilesService>>>,
     jobs: Arc<Mutex<Vec<u64>>>,
+    recoverable: Arc<Mutex<std::collections::HashSet<u64>>>,
     /// What this channel last told JavaScript about its jobs.
     job_view: Mutex<JobView>,
     /// The watched folder's change count last reported to the window.
@@ -613,7 +614,11 @@ impl DataChannel {
         view.more = false;
         let mut changed = Vec::new();
         let mut bytes = 0;
-        for job in files.jobs().map_err(core_error)? {
+        let jobs = files.jobs().map_err(core_error)?;
+        // Files lists jobs in id order, including the ones whose next page has yet to go out.
+        view.sent
+            .retain(|id, _| jobs.binary_search_by_key(id, |job| job.id).is_ok());
+        for job in jobs {
             let shape = crate::transfer_job(&job);
             let text =
                 serde_json::to_string(&shape).map_err(|_| Error::from_reason("Invalid job"))?;
@@ -770,11 +775,15 @@ impl DataChannel {
     #[napi]
     pub fn file_operation(&self, command: String) -> Result<AsyncTask<FileTask>> {
         self.check()?;
-        if self.kind != ChannelKind::Files || command.len() > 16384 {
+        // A selection carries up to 50,000 names; other operations are short control messages.
+        if self.kind != ChannelKind::Files || command.len() > 32 * 1024 * 1024 {
             return Err(Error::from_reason("Invalid file operation"));
         }
         let operation: FileOperation = serde_json::from_str(&command)
             .map_err(|_| Error::from_reason("Invalid file operation"))?;
+        if command.len() > 16384 && !matches!(operation, FileOperation::Submit { .. }) {
+            return Err(Error::from_reason("Invalid file operation"));
+        }
         Ok(AsyncTask::new(FileTask {
             core: self.core.clone(),
             session: self.session_id,
@@ -787,6 +796,7 @@ impl DataChannel {
                 .cloned()
                 .ok_or_else(|| Error::from_reason("Missing file owner"))?,
             jobs: self.jobs.clone(),
+            recoverable: self.recoverable.clone(),
             closed: self.closed.clone(),
             operation,
         }))
@@ -1330,6 +1340,7 @@ impl Task for OpenChannelTask {
             owner: owner.map(|owner| (owner.id, owner.generation)),
             files: Mutex::new(files),
             jobs: Arc::new(Mutex::new(Vec::new())),
+            recoverable: Arc::default(),
             job_view: Mutex::new(JobView::default()),
             folder_seen: std::sync::atomic::AtomicU64::new(0),
             video: Mutex::new(video),
@@ -1534,6 +1545,7 @@ pub struct FileTask {
     session: u64,
     generation: u64,
     jobs: Arc<Mutex<Vec<u64>>>,
+    recoverable: Arc<Mutex<std::collections::HashSet<u64>>>,
     closed: Arc<std::sync::atomic::AtomicBool>,
     operation: FileOperation,
 }
@@ -1721,19 +1733,60 @@ impl FileTask {
                 Ok(serde_json::Value::Null)
             }
             FileOperation::Adopt => {
-                let adopted = files.resume_orphans()?;
+                let recovered = files.resume_orphans()?;
+                let owned: std::collections::HashSet<_> =
+                    files.jobs()?.into_iter().map(|job| job.id).collect();
                 let mut jobs = self
                     .jobs
                     .lock()
                     .map_err(|_| Error::from_reason("Channel unavailable"))?;
-                jobs.extend(adopted.iter().map(|job| job.id));
-                drop(jobs);
-                Self::json(adopted.iter().map(crate::transfer_job).collect::<Vec<_>>())
+                let mut pending = self
+                    .recoverable
+                    .lock()
+                    .map_err(|_| Error::from_reason("Channel unavailable"))?;
+                for job in &recovered {
+                    if owned.contains(&job.id) {
+                        if !jobs.contains(&job.id) {
+                            jobs.push(job.id);
+                        }
+                    } else {
+                        pending.insert(job.id);
+                    }
+                }
+                Self::json(
+                    recovered
+                        .iter()
+                        .map(crate::transfer_job)
+                        .collect::<Vec<_>>(),
+                )
             }
             FileOperation::Cancel { job_id } => {
                 Self::json(crate::transfer_job(&files.job_cancel(self.owned(job_id)?)?))
             }
             FileOperation::Resume { job_id } => {
+                let id = parse_id(job_id, "Invalid job")?;
+                let pending = self
+                    .recoverable
+                    .lock()
+                    .map_err(|_| Error::from_reason("Channel unavailable"))?
+                    .contains(&id);
+                if pending {
+                    files.adopt_job(id)?;
+                    let mut jobs = self
+                        .jobs
+                        .lock()
+                        .map_err(|_| Error::from_reason("Channel unavailable"))?;
+                    if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+                        return Err(Refused("NoSession: the window closed".into()));
+                    }
+                    if !jobs.contains(&id) {
+                        jobs.push(id);
+                    }
+                    self.recoverable
+                        .lock()
+                        .map_err(|_| Error::from_reason("Channel unavailable"))?
+                        .remove(&id);
+                }
                 Self::json(crate::transfer_job(&files.job_resume(self.owned(job_id)?)?))
             }
             FileOperation::Resolve {
@@ -2057,6 +2110,7 @@ mod tests {
             generation: active.generation,
             files: files.files.lock().unwrap().as_ref().unwrap().clone(),
             jobs: files.jobs.clone(),
+            recoverable: files.recoverable.clone(),
             closed: files.closed.clone(),
             operation: FileOperation::Submit {
                 direction: "upload".into(),
@@ -2070,18 +2124,37 @@ mod tests {
         let answer = |task: &mut FileTask| -> serde_json::Value {
             serde_json::from_str(&task.compute().unwrap()).unwrap()
         };
-        let progress = answer(&mut file_task)["ok"].clone();
-        assert!(
-            progress.get("data").is_none(),
-            "File payload crossed the UI boundary"
-        );
-        let job_id = progress["id"].as_str().unwrap().to_owned();
-        file_task.operation = FileOperation::Cancel {
-            job_id: job_id.clone(),
-        };
-        assert_eq!(answer(&mut file_task)["ok"]["state"], "Cancelled");
-        file_task.operation = FileOperation::Forget { job_id };
-        assert_eq!(answer(&mut file_task)["ok"], serde_json::Value::Null);
+        for _ in 0..3 {
+            let progress = answer(&mut file_task)["ok"].clone();
+            assert!(
+                progress.get("data").is_none(),
+                "File payload crossed the UI boundary"
+            );
+            let job_id = progress["id"].as_str().unwrap().to_owned();
+            let submit = std::mem::replace(
+                &mut file_task.operation,
+                FileOperation::Cancel {
+                    job_id: job_id.clone(),
+                },
+            );
+            assert_eq!(answer(&mut file_task)["ok"]["state"], "Cancelled");
+            files.job_view.lock().unwrap().at = None;
+            files.job_updates().unwrap();
+            assert_eq!(
+                files.job_view.lock().unwrap().sent.len(),
+                1,
+                "one visible snapshot"
+            );
+            file_task.operation = FileOperation::Forget { job_id };
+            assert_eq!(answer(&mut file_task)["ok"], serde_json::Value::Null);
+            files.job_view.lock().unwrap().at = None;
+            files.job_updates().unwrap();
+            assert!(
+                files.job_view.lock().unwrap().sent.is_empty(),
+                "zero snapshots or serialized bytes retained after forgetting"
+            );
+            file_task.operation = submit;
+        }
         // The other computer's folders are listed, made, renamed and deleted
         // through the channel; a refusal is an answer, and the channel lives.
         file_task.operation = FileOperation::Places;
@@ -2179,6 +2252,12 @@ mod tests {
         let mut states = Vec::new();
         crate::wait::wait_until("the transfer's completion to be pushed", || {
             if let Some(event) = files.read().unwrap() {
+                // A folder change recorded before the watch stopped may still be waiting to be read.
+                if event.kind == "folderChanged" {
+                    assert!(event.data.is_none());
+                    assert_eq!(event.metadata, "{}");
+                    return false;
+                }
                 assert_eq!(event.kind, "jobs");
                 let update: serde_json::Value = serde_json::from_str(&event.metadata).unwrap();
                 for job in update["jobs"].as_array().unwrap() {

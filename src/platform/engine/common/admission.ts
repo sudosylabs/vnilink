@@ -7,6 +7,9 @@
 
 import type { DataChannelRequest } from './dataChannel.js';
 
+/** Allows the native controller its forty-second admission wait and time to deliver the answer. */
+export const admissionTimeout = 45000;
+
 /** A service the engine asks another computer to be admitted to, by the engine's name for it. */
 export type AdmissionService = 'Desktop' | 'Files' | 'Terminal' | 'Camera' | 'SystemAudio' | 'Microphone' | 'System';
 

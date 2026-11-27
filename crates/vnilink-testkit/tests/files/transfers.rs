@@ -569,8 +569,8 @@ fn a_cancelled_download_keeps_what_landed_and_shows_nothing_partial() -> TestRes
     "#]],
         || story("host", &["job state"]),
     );
-    // The host may have written all of the large file before the cancel
-    // reached it, so that serve ends either way; the resumed one is whole.
+    // The host can observe the cancel, lose the receiving stream, or finish
+    // sending before either reaches it.
     let served = trace.named("file served");
     let ended = |index: usize| served[index]["ended"].as_str().unwrap_or_default();
     assert_eq!(served.len(), 3, "each fetch is served once: {served:?}");
@@ -579,10 +579,20 @@ fn a_cancelled_download_keeps_what_landed_and_shows_nothing_partial() -> TestRes
         ("sent", "sent"),
         "the small file and the resumed large one are sent whole: {served:?}"
     );
-    assert!(
-        matches!(ended(1), "the receiver left" | "sent"),
-        "the cancelled serve ends as its receiver leaves, or sent if it was already written: {served:?}"
-    );
+    let sent = served[1]["sent"]
+        .as_u64()
+        .expect("bytes sent before cancellation");
+    match ended(1) {
+        "cancelled or no longer permitted" | "the receiver left" => assert!(
+            (field(1, "took")..=size).contains(&sent),
+            "the host sent at least what the receiver kept: {served:?}"
+        ),
+        "sent" | "the receiver left before the end" => assert_eq!(
+            sent, size,
+            "the host reached the stream end after writing the whole file: {served:?}"
+        ),
+        reason => panic!("unexpected end to the cancelled serve: {reason}: {served:?}"),
+    }
     Ok(())
 }
 

@@ -133,12 +133,31 @@ suite('EngineSettings', () => {
 			await assert.rejects(settings.update('terminal.replaySize', 2048), /Replay can’t be larger than the history limit/);
 			assert.deepStrictEqual([policies.terminal.max_sessions, policies.terminal.max_sessions_per_peer, policies.terminal.replay_bytes], [4, 4, 8192]);
 		});
+		test('a previous microphone grant can be withdrawn and cannot be enabled again', async () => {
+			policies.sharing.microphone = true;
+			const settings = await createSettings();
+			assert.ok(!settings.restricted.includes('sharing.microphone'));
+			await settings.update('sharing.microphone', false);
+			assert.ok(settings.restricted.includes('sharing.microphone'));
+			await assert.rejects(settings.update('sharing.microphone', true), /microphone listening is unavailable/);
+			assert.strictEqual(policies.sharing.microphone, false);
+		});
 		test('an existing clipboard grant can be withdrawn and cannot be enabled again', async () => {
 			const settings = await createSettings();
 			await settings.update('sharing.clipboard', false);
 			assert.ok(settings.restricted.includes('sharing.clipboard'));
 			await assert.rejects(settings.update('sharing.clipboard', true), /clipboard sync is unavailable/);
 			assert.strictEqual(policies.sharing.clipboard, false);
+		});
+		test('turning off system audio keeps the screen and input grants after settings reload', async () => {
+			const settings = await createSettings();
+			await settings.update('sharing.screen', true);
+			await settings.update('sharing.systemAudio', false);
+			await settings.refresh();
+			assert.strictEqual(settings.values['sharing.screen'], true);
+			assert.strictEqual(settings.values['sharing.systemAudio'], false);
+			assert.strictEqual(policies.sharing.view, true);
+			assert.strictEqual(policies.sharing.control, true);
 		});
 		test('sharing the screen grants viewing, control and the screen\'s sound, and nothing else', async () => {
 			const settings = await createSettings();
@@ -164,7 +183,8 @@ suite('EngineSettings', () => {
 	suite('security', () => {
 		test('actions this computer does not support are restricted', async () => {
 			const settings = await createSettings();
-			assert.deepStrictEqual(settings.restricted, ['security.allowRestart']);
+			assert.ok(settings.restricted.includes('security.allowRestart'));
+			assert.ok(!settings.restricted.includes('security.allowLock'));
 		});
 		test('a restricted action cannot be enabled', async () => {
 			const settings = await createSettings();

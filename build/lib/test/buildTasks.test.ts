@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { assertNativeFresh, compileNative, stageNative, type NativeIdentity, type NativeOptions } from '../native.ts';
 import { isMacintosh, isWindows } from '../platform.ts';
+import { runNativeTests } from '../tools.ts';
 import { ProcessRunner } from '../processes.ts';
 import { define, execute, parallel, series, type Task } from '../task.ts';
 import { agentSides, launchAgentSide, selectPeer, selectRuns, selectServices, testkitServices } from '../testkit.ts';
@@ -151,6 +152,12 @@ suite('build tasks', () => {
 		test('agent instructions beside the sources leave the addon fresh', async () => {
 			await writeFile(join(checkout, 'crates/AGENTS.md'), 'instructions');
 			await assertNativeFresh(checkout, out, options);
+		});
+		test('standalone native tests reject a stale stamp before starting the suite', async () => {
+			await mkdir(join(checkout, 'test/native'), { recursive: true });
+			await writeFile(join(checkout, 'test/native/stale.test.mjs'), "throw new Error('Native suite ran');");
+			await writeFile(join(out, 'native/build.json'), '{}');
+			await assert.rejects(runNativeTests(checkout, new AbortController().signal), /Native addon missing or stale/);
 		});
 		test('a stamp naming another target is stale', async () => {
 			const stamp: unknown = JSON.parse(await readFile(join(checkout, 'out/native/build.json'), 'utf8'));

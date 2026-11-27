@@ -11,7 +11,7 @@ import type { PermissionKind } from '../../../platform/permissions/common/permis
 export type OnboardingRole = 'control' | 'reachable' | 'both';
 
 /** The services a reachable computer may share, by setting, in the order the step lists them. */
-export const sharingSettings = ['sharing.screen', 'sharing.files', 'sharing.terminal', 'sharing.camera', 'sharing.microphone', 'sharing.systemAudio'] as const;
+export const sharingSettings = ['sharing.screen', 'sharing.files', 'sharing.terminal', 'sharing.camera', 'sharing.systemAudio'] as const;
 
 export type SharingSetting = typeof sharingSettings[number];
 
@@ -39,8 +39,7 @@ export function onboardingSteps(role: OnboardingRole, permissions: readonly Perm
 
 /**
  * The operating-system permissions the choices need: the screen and, on
- * macOS, Accessibility to be seen and controlled; the camera and microphone
- * only when shared. Controlling other computers needs none here.
+ * macOS, Accessibility to be seen and controlled, and the camera when shared. Controlling other computers needs none here.
  */
 export function neededPermissions(choices: OnboardingChoices, available: readonly PermissionKind[]): readonly PermissionKind[] {
 	if (!reachable(choices.role)) {
@@ -52,9 +51,6 @@ export function neededPermissions(choices: OnboardingChoices, available: readonl
 	}
 	if (choices.sharing['sharing.camera']) {
 		needed.push('camera');
-	}
-	if (choices.sharing['sharing.microphone']) {
-		needed.push('microphone');
 	}
 	return needed.filter(kind => available.includes(kind));
 }

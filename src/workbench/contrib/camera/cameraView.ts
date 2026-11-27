@@ -17,7 +17,7 @@ import { INativeHostService } from '../../../platform/native/common/native.js';
 import { IRecordingService } from '../../../platform/recording/common/recording.js';
 import { defaultButtonStyles } from '../../../platform/theme/browser/defaultStyles.js';
 import { ICameraService, type CameraChoice, type CameraEnd, type CameraFailure } from '../../services/camera/cameraService.js';
-import type { DeviceSummary } from '../../services/devices/deviceService.js';
+import { IDeviceService, type DeviceSummary } from '../../services/devices/deviceService.js';
 import { INativeRuntimeService } from '../../services/nativeRuntime/nativeRuntimeService.js';
 import { formatElapsed, SessionRecording, type RecordingStartFailure } from '../../services/recording/sessionRecording.js';
 import { ITabService, type WorkbenchTab } from '../../services/tabs/tabService.js';
@@ -126,6 +126,7 @@ export class CameraView extends Disposable implements WorkbenchTab {
 	private readonly recording: SessionRecording;
 	private cameras: readonly CameraChoice[] = [];
 	private recordingAllowed = false;
+	private consentRevision = 0;
 	private attempt = 0;
 	private hasPicture = false;
 	private playing = false;
@@ -134,6 +135,7 @@ export class CameraView extends Disposable implements WorkbenchTab {
 
 	constructor(
 		private readonly device: DeviceSummary,
+		@IDeviceService private readonly devices: IDeviceService,
 		@ICameraService private readonly cameraService: ICameraService,
 		@ITabService private readonly tabService: ITabService,
 		@INativeHostService private readonly nativeHost: INativeHostService,
@@ -183,6 +185,11 @@ export class CameraView extends Disposable implements WorkbenchTab {
 	}
 
 	private registerListeners(): void {
+		this._register(this.devices.onDidChangeAvailability(id => {
+			if (id === this.device.id) {
+				void this.refreshRecordingConsent();
+			}
+		}));
 		this._register(this.recording.onDidChange(() => {
 			this.updateControls();
 		}));
@@ -242,9 +249,19 @@ export class CameraView extends Disposable implements WorkbenchTab {
 		}));
 	}
 
+	private async refreshRecordingConsent(): Promise<void> {
+		const revision = ++this.consentRevision;
+		const report = await this.devices.availability(this.device.id).catch(() => null);
+		if (!this._store.isDisposed && this.consentRevision === revision) {
+			this.recordingAllowed = report?.some(item => item.capability === 'recording' && item.status === 'available') === true;
+			this.updateControls();
+		}
+	}
+
 	/** Lists the cameras again and opens the chosen one. */
 	private async start(): Promise<void> {
 		const attempt = ++this.attempt;
+		const consentRevision = ++this.consentRevision;
 		this.stream.clear();
 		this.showStatus(nls.localize('camera.connecting', 'Connecting to the camera on {0}…', this.device.name));
 		const result = await this.cameraService.cameras(this.device.id);
@@ -256,7 +273,9 @@ export class CameraView extends Disposable implements WorkbenchTab {
 			return;
 		}
 		this.cameras = result.cameras;
-		this.recordingAllowed = result.recording;
+		if (this.consentRevision === consentRevision) {
+			this.recordingAllowed = result.recording;
+		}
 		this.renderPicker();
 		await this.open(this.picker.value, attempt);
 	}
@@ -381,7 +400,7 @@ export class CameraView extends Disposable implements WorkbenchTab {
 		this.record.setAttribute('aria-pressed', String(recording));
 		this.element.classList.toggle('camera-is-recording', recording);
 		this.recordingBadge.hidden = !recording;
-		this.recordingTime.textContent = formatElapsed(this.recording.elapsedMs);
+		this.recordingTime.textContent = this.recording.statusUnavailable ? nls.localize('recording.statusUnavailable', 'Recording status unavailable') : formatElapsed(this.recording.elapsedMs);
 		describe(this.fit, this.fitted ? nls.localize('camera.fill', 'Fill the Tab') : nls.localize('camera.fit', 'Show the Whole Picture'), this.fitted ? Icons.fillView : Icons.fitToView);
 		describe(this.fullScreenButton, this.fullScreen ? nls.localize('camera.exitFullScreen', 'Exit Full Screen') : nls.localize('camera.fullScreen', 'Full Screen'), this.fullScreen ? Icons.exitFullScreen : Icons.fullScreen);
 	}

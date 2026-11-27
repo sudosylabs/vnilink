@@ -221,6 +221,22 @@ suite('FilesView', () => {
 			const marks = [...activity?.querySelectorAll<HTMLElement>('.files-activity-item') ?? []].map(item => `${item.dataset.state ?? ''}:${item.querySelector('.files-ring') ? 'ring' : item.querySelector<HTMLElement>('.files-mark')?.dataset.tone ?? 'none'}`);
 			assert.deepStrictEqual(marks, ['Interrupted:ring', 'Complete:landed']);
 		});
+		test('background progress preserves the focused transfer action and its Escape path', () => {
+			click(summary);
+			const resume = view.element.querySelector<HTMLButtonElement>('.files-activity-item button');
+			assert.ok(resume);
+			resume.focus();
+			fixture.session.set(fixture.session.jobs.map(item => ({ ...item, done_bytes: '50' })));
+			assert.strictEqual(document.activeElement, resume);
+			press(resume, 'Escape', 27);
+			assert.strictEqual(document.activeElement, summary);
+		});
+		test('removing the focused transfer moves focus into the dialog', () => {
+			click(summary);
+			view.element.querySelector<HTMLButtonElement>('.files-activity-item button')?.focus();
+			fixture.session.set(fixture.session.jobs.filter(item => item.id !== '20'));
+			assert.strictEqual(document.activeElement, view.element.querySelector('.files-activity'));
+		});
 		test('Escape closes it and returns to the status bar', () => {
 			click(summary);
 			const activity = view.element.querySelector<HTMLElement>('.files-activity');

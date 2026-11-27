@@ -56,6 +56,7 @@ struct Written {
     /// The progress line the journal ends with, in effect.
     progress: String,
     has_manifest: bool,
+    needs_rewrite: bool,
     /// Bytes of the first line, and of everything after it.
     record_bytes: u64,
     appended_bytes: u64,
@@ -82,6 +83,13 @@ enum Write {
 /// did, tells watchers and the driver. Without a transfer directory nothing
 /// reaches disk, but changes are still told.
 pub(super) fn save_jobs(shared: &Shared) -> Result<(), Error> {
+    save_jobs_with(shared, write_journal)
+}
+
+fn save_jobs_with(
+    shared: &Shared,
+    write_journal: impl Fn(&std::path::Path, u64, &Write) -> Result<(), Error>,
+) -> Result<(), Error> {
     let mut journal = lock(&shared.job_journal);
     let (writes, progress) = {
         let mut jobs = lock(&shared.jobs);
@@ -94,7 +102,11 @@ pub(super) fn save_jobs(shared: &Shared) -> Result<(), Error> {
                 written.appended_bytes > (2 * written.record_bytes).max(MIN_COMPACT_BYTES)
             });
             let write = match written {
-                Some(written) if written.has_manifest == record.has_manifest() && !compact => {
+                Some(written)
+                    if !written.needs_rewrite
+                        && written.has_manifest == record.has_manifest()
+                        && !compact =>
+                {
                     let landed = record.unsaved_landed();
                     if written.progress == now && landed.is_empty() {
                         continue;
@@ -141,7 +153,14 @@ pub(super) fn save_jobs(shared: &Shared) -> Result<(), Error> {
     }
     for (id, write) in writes {
         if let Some(dir) = &dir {
-            write_journal(dir, id, &write)?;
+            if let Err(error) = write_journal(dir, id, &write) {
+                // A short append can leave half a line. Only a new whole record
+                // may acknowledge progress after it. Keep the entry for removal.
+                if let Some(written) = journal.written.get_mut(&id) {
+                    written.needs_rewrite = true;
+                }
+                return Err(error);
+            }
         }
         match write {
             Write::Remove => {
@@ -158,6 +177,7 @@ pub(super) fn save_jobs(shared: &Shared) -> Result<(), Error> {
                     Written {
                         progress,
                         has_manifest,
+                        needs_rewrite: false,
                         record_bytes: line.len() as u64,
                         appended_bytes: 0,
                     },
@@ -241,7 +261,7 @@ pub(super) fn read_journals(dir: &std::path::Path) -> Option<(Vec<JobRecord>, bo
         else {
             continue;
         };
-        match std::fs::read_to_string(entry.path())
+        match std::fs::read(entry.path())
             .ok()
             .and_then(|text| replay(&text))
         {
@@ -254,14 +274,14 @@ pub(super) fn read_journals(dir: &std::path::Path) -> Option<(Vec<JobRecord>, bo
 
 /// The record a journal ends with. A line that does not read, such as
 /// one torn by a crash, ends the journal there.
-fn replay(text: &str) -> Option<JobRecord> {
-    let mut lines = text.lines();
-    let ReadLine::Record(record) = serde_json::from_str(lines.next()?).ok()? else {
+fn replay(text: &[u8]) -> Option<JobRecord> {
+    let mut lines = text.split(|byte| *byte == b'\n');
+    let ReadLine::Record(record) = serde_json::from_slice(lines.next()?).ok()? else {
         return None;
     };
     let mut record = *record;
     for line in lines {
-        match serde_json::from_str(line) {
+        match serde_json::from_slice(line) {
             Ok(ReadLine::Progress(progress)) => record.take_progress(*progress),
             Ok(ReadLine::Landed(index, name)) => record.land_saved(index, name),
             Ok(ReadLine::Record(_)) | Err(_) => break,
@@ -387,5 +407,62 @@ mod tests {
         save_jobs(&core.shared).unwrap();
         assert!(!path.exists());
         core.shutdown();
+    }
+    #[test]
+    fn retry_after_a_short_append_recovers_every_landed_file(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (core, scratch) = core_with_transfer_dir();
+        let shared = &core.shared;
+        let id = 7;
+        lock(&shared.jobs).insert(id, JobRecord::test_receiver_of(id, 2));
+        save_jobs(shared)?;
+        lock(&shared.jobs).get_mut(&id).unwrap().test_land_next();
+        let failed = save_jobs_with(shared, |dir, id, write| {
+            let Write::Append(lines, _) = write else {
+                panic!("expected an append")
+            };
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(journal_path(dir, id))
+                .unwrap();
+            std::io::Write::write_all(&mut file, &lines.as_bytes()[..10]).unwrap();
+            Err(Error::InvalidSetting(SAVE_FAILED))
+        });
+        assert!(failed.is_err(), "partial progress cannot be acknowledged");
+        save_jobs(shared)?;
+        lock(&shared.jobs).get_mut(&id).unwrap().test_land_next();
+        save_jobs(shared)?;
+        let (records, clean) = read_journals(&scratch.0.join("blobs")).unwrap();
+        assert!(clean);
+        assert_eq!(records[0].snapshot().files_done, 2);
+        assert_eq!(records[0].test_landed().len(), 2);
+        core.shutdown();
+        Ok(())
+    }
+
+    #[test]
+    fn a_torn_multibyte_filename_keeps_the_previous_progress(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (core, scratch) = core_with_transfer_dir();
+        let id = 7;
+        lock(&core.shared.jobs).insert(id, JobRecord::test_receiver_of(id, 2));
+        save_jobs(&core.shared)?;
+        lock(&core.shared.jobs)
+            .get_mut(&id)
+            .unwrap()
+            .test_land_next();
+        save_jobs(&core.shared)?;
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(journal_of(&scratch, id))?;
+        std::io::Write::write_all(&mut file, b"{\"landed\":[1,\"\xc3")?;
+        drop(file);
+        let (records, clean) = read_journals(&scratch.0.join("blobs")).unwrap();
+        assert!(clean, "the initial job record remains readable");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].snapshot().files_done, 1);
+        assert_eq!(records[0].test_landed()[&0], "file-00000.bin");
+        core.shutdown();
+        Ok(())
     }
 }

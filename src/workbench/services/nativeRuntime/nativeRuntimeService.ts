@@ -24,6 +24,8 @@ export const INativeRuntimeService = createDecorator<INativeRuntimeService>('nat
 export interface INativeRuntimeService {
 	readonly _serviceBrand: undefined;
 	readonly available: boolean;
+	/** Changes when native handles from the previous engine become invalid. */
+	readonly generation: number;
 	recordingDirectory(action: 'read' | 'choose'): Promise<string | null>;
 	startRecording(target: RecordingTarget, options: RecordingOptions): Promise<Readonly<RecordingStatus>>;
 	recordingStatus(id: string): Promise<Readonly<RecordingStatus>>;

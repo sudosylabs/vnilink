@@ -88,7 +88,7 @@ export function systemRequestMessage(error: unknown): string {
 	}
 }
 
-class SystemActionService extends Disposable implements ISystemActionService {
+export class SystemActionService extends Disposable implements ISystemActionService {
 	declare public readonly _serviceBrand: undefined;
 	private readonly changed = this._register(new Emitter<string>());
 	public readonly onDidChange = this.changed.event;
@@ -203,12 +203,7 @@ class SystemActionService extends Disposable implements ISystemActionService {
 		} catch {
 			if (this.followed.get(deviceId) === followed) {
 				this.followed.delete(deviceId);
-				// A restart or shutdown that started takes the connection with
-				// it; losing it earlier in the notice proves nothing either way.
-				const started = followed.operation.state === 'admitted' || followed.operation.noticeRemainingMs <= 2 * followInterval;
-				this.end(deviceId, followed.operation.action, started
-					? startedMessage(followed.operation.action)
-					: nls.localize('system.lost', 'Connection lost'));
+				this.end(deviceId, followed.operation.action, nls.localize('system.unconfirmed', 'Couldn’t confirm whether the action ran'));
 			}
 		}
 	}

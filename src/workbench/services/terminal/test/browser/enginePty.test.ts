@@ -27,6 +27,7 @@ interface ShellOptions {
 	readonly status?: RemoteStatus | null;
 	readonly sessions?: SessionInfo[];
 	readonly openFails?: boolean;
+	readonly lookupError?: string;
 	/** Writes stay in flight until a test releases them from `pendingWrites`. */
 	readonly writeDelay?: boolean;
 	/** A kept shell the paired computer still has, detached. */
@@ -42,7 +43,7 @@ suite('EnginePty', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
 	/** A shell on `deviceId` at 100×30, with its channel, its engine and what it fired recorded. */
-	function shell({ status = 'available', sessions = [session], openFails = false, writeDelay = false, kept }: ShellOptions = {}) {
+	function shell({ status = 'available', sessions = [session], openFails = false, writeDelay = false, kept, lookupError }: ShellOptions = {}) {
 		const dataChannels = new TestDataChannelService();
 		const pendingWrites: (() => void)[] = [];
 		if (openFails) {
@@ -62,6 +63,9 @@ suite('EnginePty', () => {
 		};
 		const engine = disposables.add(new TestEngineService(command => {
 			if (command.type === 'remoteTerminalSessions') {
+				if (lookupError) {
+					throw new Error(lookupError);
+				}
 				return { type: 'terminalSessions', sessions: kept ? [{ id: kept.id, process_id: 4, shell: '/bin/sh', rows: 24, columns: 80, persistent: kept.persistent, attached: kept.attached }] : [] };
 			}
 			assert.strictEqual(command.type, 'controllerSessions');
@@ -130,6 +134,13 @@ suite('EnginePty', () => {
 		assert.strictEqual(await f.pty.start(), undefined);
 		assert.strictEqual(f.requests[0]?.resumeId, 'a'.repeat(32));
 	});
+	for (const [category, code] of [['Declined', 'declined'], ['Unanswered', 'unanswered'], ['StaleSession', 'disconnected']] as const) {
+		test('a ' + category + ' shell lookup ends the launch without asking again', async () => {
+			const f = shell({ lookupError: category + ': unavailable' });
+			assert.deepStrictEqual(await f.pty.start(), { code });
+			assert.deepStrictEqual(f.requests, []);
+		});
+	}
 	test('a started shell cannot be started again', async () => {
 		const f = shell();
 		await f.pty.start();

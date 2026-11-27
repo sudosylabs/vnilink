@@ -9,6 +9,8 @@ import assert from 'assert';
 import { DeferredPromise, timeout } from '../../../../base/common/async.js';
 import { toDisposable } from '../../../../base/common/lifecycle.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
+import { runWithFakedTimers } from '../../../../base/test/common/virtualScheduling/index.js';
+import { TestEngineService } from '../common/testEngineService.js';
 import type { DataPacket, DesktopAudioStatus } from '../../common/dataChannel.js';
 import type { DesktopInputCommand } from '../../common/engine.js';
 import type { FileJob } from '../../common/files.js';
@@ -111,6 +113,22 @@ suite('DataChannelClient', () => {
 	setup(() => {
 		errors = [];
 	});
+	test('a files channel can become ready after twenty seconds of host approval', () => runWithFakedTimers({}, async () => {
+		const engine = disposables.add(new TestEngineService(() => ({ type: 'done' })));
+		engine.openDataChannel = () => Promise.resolve();
+		const { port1, port2 } = new MessageChannel();
+		const opening = DataChannelClient.open(engine, { kind: 'files', sessionId: '1', generation: '2' }, () => undefined, error => errors.push(error), {
+			acquire: (_name, nonce) => {
+				window.dispatchEvent(new MessageEvent('message', { source: window, origin: location.origin, data: nonce, ports: [port1] }));
+			},
+			release: () => undefined,
+		});
+		await timeout(20000);
+		port1.dispatchEvent(new MessageEvent('message', { data: { type: 'ready' } }));
+		(await opening).close();
+		port2.close();
+		assert.deepStrictEqual(errors, []);
+	}));
 	suite('packets', () => {
 		test('a packet is acknowledged only once it was consumed', async () => {
 			const consuming = new DeferredPromise<void>();
@@ -203,6 +221,21 @@ suite('DataChannelClient', () => {
 				}
 			});
 			assert.deepStrictEqual(await client.fileOperation({ type: 'rename', root: '0', path: 'Users', name: 'a.txt', token: null, newName: 'b.txt' }), { error: 'FileExists: the name is taken' });
+			assert.deepStrictEqual(errors, []);
+		});
+		test('paged job metadata reaches Files intact and leaves the channel usable', async () => {
+			const delivered: DataPacket[] = [];
+			const { client, host } = createChannel(packet => {
+				delivered.push(packet);
+			});
+			const part = 'x'.repeat(16384);
+			host.post(dataMessage(1, 'jobPart', { metadata: part }));
+			await host.next(message => message.type === 'ack' && message.sequence === 1);
+			assert.strictEqual(delivered.length, 0);
+			host.post(dataMessage(2, 'jobEnd', { metadata: 'last' }));
+			await host.next(message => message.type === 'ack' && message.sequence === 2);
+			assert.deepStrictEqual(delivered.map(packet => [packet.kind, packet.metadata]), [['jobs', part + 'last']]);
+			client.close();
 			assert.deepStrictEqual(errors, []);
 		});
 		test('a job change arrives as a packet nobody asked for', async () => {

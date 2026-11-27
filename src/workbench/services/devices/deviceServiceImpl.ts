@@ -12,7 +12,7 @@ import { IEngineService, type EngineEventBatch } from '../../../platform/engine/
 import { deviceName, type EngineCommand, type EngineEvent, type EngineReply, type ControlRequestInfo, type RemoteCapabilityStatus } from '../../../platform/engine/common/engine.js';
 
 /** Engine events after which the device list may have changed. */
-const deviceEvents: ReadonlySet<EngineEvent['type']> = new Set(['devicePaired', 'deviceAuthorized', 'deviceRevoked', 'deviceUnpaired', 'peerRenamed', 'sessionChanged', 'presenceChanged']);
+const deviceEvents: ReadonlySet<EngineEvent['type']> = new Set(['devicePaired', 'deviceAuthorized', 'deviceRevoked', 'deviceUnpaired', 'peerRenamed', 'sessionChanged', 'presenceChanged', 'hostingChanged']);
 
 import { type ControlCheck, type DeviceSummary, IDeviceService, type PairingFile } from './deviceService.js';
 
@@ -31,6 +31,12 @@ export class DeviceService extends Disposable implements IDeviceService {
 	private readonly stateChanged = this._register(new Emitter<void>());
 	public readonly onDidChangeState = this.stateChanged.event;
 	private loaded = false;
+	private accepting = false;
+
+	public get hosting(): boolean {
+		return this.available && this.accepting;
+	}
+
 	private failed = false;
 	private current: readonly DeviceSummary[] = Object.freeze([]);
 	private revision = 0;
@@ -98,7 +104,7 @@ export class DeviceService extends Disposable implements IDeviceService {
 			this.setState(true);
 			throw new Error('Expected engine snapshot');
 		}
-		this.setState(false);
+		this.setState(false, reply.snapshot.hosting);
 		const next = Object.freeze(reply.snapshot.devices.map(device => Object.freeze({
 			id: device.endpoint_id,
 			name: deviceName(device),
@@ -221,6 +227,9 @@ export class DeviceService extends Disposable implements IDeviceService {
 		}
 		// A wait whose end was missed would show forever; the next ask says so again.
 		if (batch.resync) {
+			for (const device of this.current) {
+				this.availabilityChanged.fire(device.id);
+			}
 			for (const id of [...this.awaiting]) {
 				this.setAwaiting(id, false);
 			}
@@ -248,14 +257,16 @@ export class DeviceService extends Disposable implements IDeviceService {
 		}
 	}
 
-	private setState(failed: boolean): void {
+	private setState(failed: boolean, hosting = false): void {
 		if (this.isDisposed()) {
 			return;
 		}
 		const previous = this.state;
+		const wasHosting = this.accepting;
+		this.accepting = hosting;
 		this.loaded = true;
 		this.failed = failed;
-		if (previous !== this.state) {
+		if (previous !== this.state || wasHosting !== hosting) {
 			this.stateChanged.fire();
 		}
 	}

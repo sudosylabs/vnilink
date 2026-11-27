@@ -55,6 +55,13 @@ export class SessionRecording extends Disposable {
 	private id: string | undefined;
 	private stoppingId: string | undefined;
 	private length = 0;
+	private unavailable = false;
+	private epoch: number | undefined;
+
+	public get statusUnavailable(): boolean {
+		return this.unavailable;
+	}
+
 	private pendingStart = false;
 
 	constructor(
@@ -107,7 +114,12 @@ export class SessionRecording extends Disposable {
 	}
 
 	private async startRecording(): Promise<RecordingStartFailure | undefined> {
+		const epoch = this.nativeRuntime.generation;
 		const result = await this.start();
+		if (epoch !== this.nativeRuntime.generation) {
+			return 'disconnected';
+		}
+		this.epoch = epoch;
 		if (this._store.isDisposed) {
 			if ('recording' in result) {
 				void this.finish(result.recording, true);
@@ -119,6 +131,7 @@ export class SessionRecording extends Disposable {
 		}
 		this.id = result.recording;
 		this.length = 0;
+		this.unavailable = false;
 		this.changed.fire();
 		this.follow(result.recording);
 		return undefined;
@@ -126,7 +139,16 @@ export class SessionRecording extends Disposable {
 
 	/** Follows the recording until its file is finished, however it ends. */
 	private follow(id: string): void {
+		let reading = false;
 		const interval = setInterval(() => {
+			if (this.epoch !== this.nativeRuntime.generation) {
+				this.end(id, undefined);
+				return;
+			}
+			if (reading) {
+				return;
+			}
+			reading = true;
 			void this.nativeRuntime.recordingStatus(id).then(status => {
 				if (this.stoppingId === id || this._store.isDisposed) {
 					return;
@@ -134,13 +156,17 @@ export class SessionRecording extends Disposable {
 				if (status.phase === 'Finished' || status.phase === 'Failed') {
 					this.end(id, status);
 				} else if (this.id === id) {
+					this.unavailable = false;
 					this.length = Number(status.durationMs);
 					this.changed.fire();
 				}
 			}, () => {
-				if (this.stoppingId !== id && !this._store.isDisposed) {
-					this.end(id, undefined);
+				if (this.id === id && this.stoppingId !== id && !this._store.isDisposed) {
+					this.unavailable = true;
+					this.changed.fire();
 				}
+			}).finally(() => {
+				reading = false;
 			});
 		}, recordingPoll);
 		this.poll.value = toDisposable(() => {
@@ -157,7 +183,9 @@ export class SessionRecording extends Disposable {
 		this.poll.clear();
 		this.changed.fire();
 		this.ended.fire(status);
-		void this.nativeRuntime.releaseRecording(id).catch(() => { /* Already released, or the engine stopped. */ });
+		if (status && this.epoch === this.nativeRuntime.generation) {
+			void this.nativeRuntime.releaseRecording(id).catch(() => { /* The engine may have stopped. */ });
+		}
 	}
 
 	/** Stops a recording and, once its file is finished, releases it. */
@@ -170,21 +198,31 @@ export class SessionRecording extends Disposable {
 			this.stoppingId = id;
 			this.changed.fire();
 		}
-		try {
-			let status = await this.nativeRuntime.stopRecording(id);
-			while (status.phase !== 'Finished' && status.phase !== 'Failed') {
+		let stopRequested = false;
+		while (this.epoch === this.nativeRuntime.generation) {
+			try {
+				const status = stopRequested ? await this.nativeRuntime.recordingStatus(id) : await this.nativeRuntime.stopRecording(id);
+				stopRequested = true;
+				if (this.epoch !== this.nativeRuntime.generation) {
+					break;
+				}
+				if (status.phase === 'Finished' || status.phase === 'Failed') {
+					if (detached || this._store.isDisposed) {
+						await this.nativeRuntime.releaseRecording(id);
+					} else {
+						this.end(id, status);
+					}
+					return;
+				}
 				await new Promise(resolve => setTimeout(resolve, 100));
-				status = await this.nativeRuntime.recordingStatus(id);
+			} catch {
+				this.unavailable = true;
+				this.changed.fire();
+				await new Promise(resolve => setTimeout(resolve, recordingPoll));
 			}
-			if (detached || this._store.isDisposed) {
-				await this.nativeRuntime.releaseRecording(id);
-			} else {
-				this.end(id, status);
-			}
-		} catch {
-			if (!detached && !this._store.isDisposed) {
-				this.end(id, undefined);
-			}
+		}
+		if (!detached && !this._store.isDisposed) {
+			this.end(id, undefined);
 		}
 	}
 }

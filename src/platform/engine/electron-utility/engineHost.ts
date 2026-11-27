@@ -118,6 +118,15 @@ export class EngineHost implements IClientConnectionFilter {
 		}
 	}
 
+	/** Main dispatches the command only if this answer reaches the original waiting caller. */
+	public async admitCommand(command: unknown): Promise<{ type: 'done' }> {
+		if (!record(command) || !this.engine || this.shuttingDown) {
+			throw new Error('Engine unavailable');
+		}
+		await this.admit(commandAdmission(command));
+		return { type: 'done' };
+	}
+
 	/**
 	 * Runs one engine command. Commands are shape-checked only: validation
 	 * lives at the window IPC boundary and in Rust, so a bad caller fails its
@@ -137,7 +146,6 @@ export class EngineHost implements IClientConnectionFilter {
 			this.beginShutdown();
 		}
 		try {
-			await this.admit(commandAdmission(command));
 			// Replies are validated by the main-process owner; forward them untouched.
 			return JSON.parse(await this.engine.execute(JSON.stringify(command)));
 		} catch (error) {
@@ -196,6 +204,9 @@ export class EngineHost implements IClientConnectionFilter {
 		const engine = this.engine;
 		const open = async (): Promise<NativeDataChannel> => {
 			await this.admit(channelAdmission(request));
+			if (!channels.has(channel)) {
+				throw new Error('Channel closed');
+			}
 			return engine.openDataChannel(
 				request.kind,
 				request.sessionId,

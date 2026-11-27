@@ -358,7 +358,7 @@ export class OnboardingView extends Disposable implements WorkbenchTab {
 		this.heading.textContent = nls.localize('onboarding.doneTitle', 'VniLink is ready');
 		append(this.body, $('p')).textContent = reachable(this.choices.role)
 			? nls.localize('onboarding.doneReachable', 'Next, pair your other computers: on Devices, invite one, or open the invitation it sent you. A paired computer can use only what you turned on.')
-			: nls.localize('onboarding.doneControl', 'Next, pair your other computers: on Devices, open the invitation one sent you, or invite one.');
+			: nls.localize('onboarding.doneControl', 'On the computer you want to reach, create an invitation. Open it here on the Devices page.');
 		this.next.label = nls.localize('onboarding.goToDevices', 'Go to Devices');
 	}
 

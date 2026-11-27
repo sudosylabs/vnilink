@@ -53,7 +53,7 @@ suite('NativeRuntimeService', () => {
 			},
 		});
 		instantiationService.stub(IConfigurationService, new TestSettings(values));
-		return instantiationService.createInstance(NativeRuntimeService);
+		return disposables.add(instantiationService.createInstance(NativeRuntimeService));
 	}
 	setup(() => {
 		engine = disposables.add(new TestEngineService(() => ({ type: 'recordingStatus', status })));

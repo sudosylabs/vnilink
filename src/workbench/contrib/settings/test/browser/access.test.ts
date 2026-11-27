@@ -18,6 +18,7 @@ suite('Access settings page', () => {
 	setup(async () => {
 		fixture = disposables.add(new SettingsFixture());
 		fixture.configuration.setRestricted('security.allowRestart', true);
+		fixture.configuration.setRestricted('sharing.microphone', true);
 		page = fixture.open('access');
 		await settle();
 	});
@@ -33,6 +34,20 @@ suite('Access settings page', () => {
 		await settle();
 		assert.strictEqual(fixture.configuration.updates.at(-1)?.key, 'sharing.screen');
 		assert.strictEqual(screen().checked, true);
+	});
+	test('the disabled microphone explains that remote listening is unavailable in this version', () => {
+		const microphone = element<HTMLInputElement>(page.element, '[data-setting="sharing.microphone"]');
+		assert.strictEqual(microphone.disabled, true);
+		assert.ok(microphone.closest('.setting-row')?.textContent.includes('Remote microphone listening is unavailable in this version.'));
+	});
+	test('the recording grant names both sources before it is enabled', async () => {
+		const recording = element<HTMLInputElement>(page.element, '[data-setting="sharing.recording"]');
+		assert.ok(recording.closest('.setting-row')?.textContent.includes('Allow recording of shared screens and cameras'));
+		assert.strictEqual(recording.checked, false);
+		toggle(recording);
+		await settle();
+		assert.strictEqual(fixture.configuration.updates.at(-1)?.key, 'sharing.recording');
+		assert.strictEqual(recording.checked, true);
 	});
 	test('a refused sharing change keeps the value in effect and explains why', async () => {
 		toggle(screen());

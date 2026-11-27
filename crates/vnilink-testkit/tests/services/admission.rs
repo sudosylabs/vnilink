@@ -90,15 +90,29 @@ fn a_waiting_service_closes_without_withdrawing_the_request() -> TestResult {
             .is_cancelled(),
         "its lease is live"
     );
-    vnilink_testkit::assert_story(
+    // The session can adopt its generation while still connecting. If the
+    // services synchronize then, Files records that generation before it opens.
+    let adopted_while_waiting = trace
+        .named("service phase")
+        .iter()
+        .any(|event| event["from"] == "waiting" && event["to"] == "waiting");
+    let expected = if adopted_while_waiting {
+        expect![[r#"
+        controller:
+          service: service phase from=waiting generation=0 kind=Desktop service=1 to=closed: OwnerClose
+          service: service phase from=waiting generation=1 kind=Files service=2 to=waiting
+          session: session phase from=connecting generation=1 role=Controller session=1 to=active
+          service: service phase from=waiting generation=1 kind=Files service=2 to=active
+    "#]]
+    } else {
         expect![[r#"
         controller:
           service: service phase from=waiting generation=0 kind=Desktop service=1 to=closed: OwnerClose
           session: session phase from=connecting generation=1 role=Controller session=1 to=active
           service: service phase from=waiting generation=1 kind=Files service=2 to=active
-    "#]],
-        || trace.story(&["service", "session"]),
-    );
+    "#]]
+    };
+    vnilink_testkit::assert_story(expected, || trace.story(&["service", "session"]));
     Ok(())
 }
 

@@ -26,6 +26,7 @@ export type TestDeviceCall =
  * does not script are refused.
  */
 export class TestDeviceService extends Disposable implements IDeviceService {
+	public hosting = true;
 	declare public readonly _serviceBrand: undefined;
 	public readonly available = true;
 	public readonly state = 'ready';

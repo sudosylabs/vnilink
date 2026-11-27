@@ -9,13 +9,14 @@ import { MessageChannelMain, utilityProcess } from 'electron';
 import type { MessagePortMain } from 'electron';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
-import { CancellationTokenSource } from '../../../base/common/cancellation.js';
+import { CancellationToken, CancellationTokenSource } from '../../../base/common/cancellation.js';
 import { Emitter, Event, Relay } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, type IDisposable } from '../../../base/common/lifecycle.js';
 import type { IChannel } from '../../../base/parts/ipc/common/ipc.js';
 import { Client as MessagePortClient } from '../../../base/parts/ipc/electron-main/ipc.mp.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { ILogService } from '../../log/common/log.js';
+import { admissionTimeout, commandAdmission } from '../common/admission.js';
 import type { DataChannelRequest } from '../common/dataChannel.js';
 import type { EngineCommand, EngineReply } from '../common/engine.js';
 import { engineErrorCategory, isEngineEvent, isEngineReply, record } from '../common/engine.js';
@@ -413,7 +414,10 @@ export class EngineMainService extends Disposable implements IEngineSettingsServ
 		}
 	}
 
-	public execute(command: EngineCommand): Promise<EngineReply> {
+	public execute(command: EngineCommand, token = CancellationToken.None): Promise<EngineReply> {
+		if (commandAdmission(command)) {
+			return this.executeAfterAdmission(command, token);
+		}
 		// Validated at the IPC boundary and in the Rust bridge; this queue
 		// stays typed-only so slow pairing work cannot hide a second check.
 		if (command.type === 'snapshot') {
@@ -436,6 +440,24 @@ export class EngineMainService extends Disposable implements IEngineSettingsServ
 		return this.enqueue(command, this.slowQueue, queue => {
 			this.slowQueue = queue;
 		});
+	}
+
+	/** A person answering on another computer never occupies the command queue. */
+	private async executeAfterAdmission(command: EngineCommand, token: CancellationToken): Promise<EngineReply> {
+		if (this.pending >= maxPendingRequests) {
+			throw new Error('Engine unavailable');
+		}
+		const connection = this.connection;
+		this.pending++;
+		try {
+			await this.send(command, 'admitCommand', token);
+			if (this.connection !== connection || token.isCancellationRequested) {
+				throw new Error('Engine request cancelled');
+			}
+			return await this.send(command);
+		} finally {
+			this.pending--;
+		}
 	}
 
 	private enqueue(command: EngineCommand | { type: 'shutdown' }, lane: Promise<void>, advance: (queue: Promise<void>) => void): Promise<EngineReply> {
@@ -468,13 +490,13 @@ export class EngineMainService extends Disposable implements IEngineSettingsServ
 		this.events.input = Event.map(this.channel.listen<unknown>('onDidReceiveEvents'), batch => validEventBatch(batch));
 	}
 
-	private send(command: EngineCommand | { type: 'shutdown' }): Promise<EngineReply> {
+	private send(command: EngineCommand | { type: 'shutdown' }, method = 'execute', token = CancellationToken.None): Promise<EngineReply> {
 		const channel = this.channel;
 		if (!channel || !this.connected || (this.closing && command.type !== 'shutdown')) {
 			return Promise.reject(new Error('Engine unavailable'));
 		}
 		return new Promise((resolve, reject) => {
-			const cancellation = new CancellationTokenSource();
+			const cancellation = new CancellationTokenSource(token);
 			const settle = (): void => {
 				clearTimeout(timeout);
 				this.waiting.delete(fail);
@@ -484,16 +506,17 @@ export class EngineMainService extends Disposable implements IEngineSettingsServ
 				settle();
 				reject(error);
 			};
-			const timeout = setTimeout(() => {
+			// Once dispatched, retain the native system operation's reply until it settles or the engine exits.
+			const timeout = method === 'execute' && command.type === 'systemAction' ? undefined : setTimeout(() => {
 				// A slow call fails alone; the engine stays up for the rest. Cancelling
 				// stops the wait, not the work: the command may still finish, so the
 				// message says so and callers re-read before they repeat a change.
 				this.logService.warn(`[engine] ${command.type} did not answer in time; its outcome is unknown.`);
 				cancellation.cancel();
 				fail(new Error('Engine operation timed out and may still finish'));
-			}, timeoutFor(command));
+			}, method === 'admitCommand' ? admissionTimeout : timeoutFor(command));
 			this.waiting.add(fail);
-			channel.call<unknown>('execute', [command], cancellation.token).then(reply => {
+			channel.call<unknown>(method, [command], cancellation.token).then(reply => {
 				if (!this.waiting.has(fail)) {
 					return;
 				}
